@@ -30,6 +30,10 @@ namespace ID
     inline constexpr auto delayMix = "delayMix", delayTime = "delayTime", delayFb = "delayFb";
     inline constexpr auto verbMix = "verbMix", verbSize = "verbSize", verbDamp = "verbDamp";
     inline constexpr auto width = "width", master = "master";
+
+    // Sample section (plays a dropped sample through the same amp env + FX chain)
+    inline constexpr auto smpLevel = "smpLevel", smpRoot = "smpRoot", smpTune = "smpTune", smpStart = "smpStart", smpEnd = "smpEnd";
+    inline constexpr auto smpLoop = "smpLoop", smpRev = "smpRev", smpChop = "smpChop";
 }
 
 inline const juce::StringArray waveNames { "Saw", "Square", "Triangle", "Sine", "Pulse", "Glass" };
@@ -133,6 +137,16 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     f (ID::verbDamp, "Reverb Damp", 0.f, 1.f, 0.5f);
     f (ID::width, "Width", 0.f, 1.f, 0.8f);
     f (ID::master, "Master", -36.f, 6.f, -6.f, 1.f, "dB");
+
+    // Sample
+    f (ID::smpLevel, "Sample Level", 0.f, 1.f, 0.f);
+    i (ID::smpRoot, "Sample Root", 24, 96, 60);
+    f (ID::smpTune, "Sample Tune", -12.f, 12.f, 0.f, 1.f, "st");
+    f (ID::smpStart, "Sample Start", 0.f, 1.f, 0.f);
+    f (ID::smpEnd, "Sample End", 0.f, 1.f, 1.f);
+    b (ID::smpLoop, "Sample Loop", false);
+    b (ID::smpRev, "Sample Reverse", false);
+    b (ID::smpChop, "Sample Chop Mode", false);
 
     return { p.begin(), p.end() };
 }

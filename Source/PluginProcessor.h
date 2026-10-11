@@ -5,6 +5,8 @@
 #include "Presets.h"
 #include "Chords.h"
 #include "Engine.h"
+#include "Sampler.h"
+#include "UserPresets.h"
 
 class IcewaterProcessor : public juce::AudioProcessor
 {
@@ -38,6 +40,19 @@ public:
     void loadPreset (int index);
     void randomiseSound();
 
+    // ---- User presets (~/Documents/WXRST/Presets) -----------------------------
+    std::vector<UserPreset> userPresets;            // message thread only
+    std::atomic<int> currentUserPreset { -1 };       // -1 = a factory preset is current
+    void refreshUserPresets() { userPresets = UserPresets::loadAll(); }
+    void loadUserPreset (int index);
+    int  saveUserPreset (const juce::String& name);  // returns its index in userPresets
+
+    // ---- Sample section -------------------------------------------------------
+    bool loadSampleFile (const juce::File& f);       // message thread
+    std::shared_ptr<const SampleData> getSample() const { const juce::ScopedLock sl (sampleLock); return sample; }
+    juce::File extractNotesMidi();                   // pitch-track -> .mid in the chords folder
+    juce::File chopSample (juce::File& chopDirOut);  // slice -> WAVs + .mid; enables CHOP mode
+
     // ---- Layers (melody / 808 have their own sound) --------------------------
     enum Layer { chordsLayer = 0, melodyLayer = 1, bassLayer = 2 };
     void setLayerPreset (Layer l, int presetIndex);   // melody / bass only
@@ -69,6 +84,10 @@ private:
     std::atomic<int> currentProgram { 0 };
 
     std::map<juce::String, std::atomic<float>*> raw;
+
+    juce::CriticalSection sampleLock;
+    std::shared_ptr<const SampleData> sample;
+    void setSample (std::shared_ptr<const SampleData> s);
 
     juce::CriticalSection progLock;
     std::shared_ptr<const Progression> progression;

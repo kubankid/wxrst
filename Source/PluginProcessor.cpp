@@ -24,6 +24,10 @@ IcewaterProcessor::IcewaterProcessor()
     setLayerPreset (melodyLayer, findPresetByName ("Glass Rhodes"));
     setLayerPreset (bassLayer, findPresetByName ("Ramzoid 808"));
     layerEnabled[bassLayer] = false;
+    refreshUserPresets();
+    // dev hook: preload a sample for screenshots / testing
+    const auto envSample = juce::SystemStats::getEnvironmentVariable ("ICEWATER_SAMPLE", "");
+    if (envSample.isNotEmpty() && juce::File (envSample).existsAsFile()) loadSampleFile (juce::File (envSample));
 }
 
 void IcewaterProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
@@ -55,6 +59,7 @@ void IcewaterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     // main layer follows the knobs
     for (auto& [id, ptr] : raw) engines[chordsLayer].values[id.toStdString()] = ptr->load();
+    { const juce::ScopedTryLock sl (sampleLock); if (sl.isLocked()) engines[chordsLayer].sampler.setSample (sample); }
     // other layers: apply any preset change requested from the UI
     for (int l = 1; l < 3; ++l)
     {
@@ -219,16 +224,82 @@ void IcewaterProcessor::loadPreset (int index)
     const auto& presets = getPresets();
     if (index < 0 || index >= (int) presets.size()) return;
     currentProgram = index;
+    currentUserPreset = -1;
 
+    // reset everything except the sample section (so you can flip synth presets while playing with a sample)
     for (auto* p : getParameters())
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
-            rp->setValueNotifyingHost (rp->getDefaultValue());
+            if (! rp->paramID.startsWith ("smp"))
+                rp->setValueNotifyingHost (rp->getDefaultValue());
 
     for (auto& [id, value] : presets[(size_t) index].values)
         if (auto* rp = apvts.getParameter (id))
             rp->setValueNotifyingHost (rp->convertTo0to1 (value));
 
     apvts.state.setProperty ("program", index, nullptr);
+    apvts.state.setProperty ("userPreset", "", nullptr);
+}
+
+void IcewaterProcessor::loadUserPreset (int index)
+{
+    if (! juce::isPositiveAndBelow (index, (int) userPresets.size())) return;
+    for (auto* p : getParameters())
+        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
+            rp->setValueNotifyingHost (rp->getDefaultValue());
+    for (auto& [id, value] : userPresets[(size_t) index].values)
+        if (auto* rp = apvts.getParameter (id))
+            rp->setValueNotifyingHost (rp->convertTo0to1 (value));
+    currentUserPreset = index;
+    apvts.state.setProperty ("userPreset", userPresets[(size_t) index].name, nullptr);
+}
+
+int IcewaterProcessor::saveUserPreset (const juce::String& name)
+{
+    UserPresets::save (name, apvts);
+    refreshUserPresets();
+    for (int i = 0; i < (int) userPresets.size(); ++i)
+        if (userPresets[(size_t) i].name == name) { currentUserPreset = i; apvts.state.setProperty ("userPreset", name, nullptr); return i; }
+    return -1;
+}
+
+// ---------------------------------------------------------------------------
+void IcewaterProcessor::setSample (std::shared_ptr<const SampleData> s)
+{
+    const juce::ScopedLock sl (sampleLock);
+    sample = std::move (s);
+}
+
+bool IcewaterProcessor::loadSampleFile (const juce::File& f)
+{
+    auto s = SampleAnalysis::load (f);
+    if (s == nullptr) return false;
+    setSample (s);
+    apvts.state.setProperty ("samplePath", f.getFullPathName(), nullptr);
+    if (auto* p = apvts.getParameter (ID::smpLevel))
+        if (p->getValue() <= 0.001f) p->setValueNotifyingHost (0.8f);   // dropping a sample turns it on
+    if (auto* p = apvts.getParameter (ID::smpChop)) p->setValueNotifyingHost (0.f);
+    return true;
+}
+
+juce::File IcewaterProcessor::extractNotesMidi()
+{
+    auto s = getSample();
+    if (s == nullptr) return {};
+    auto events = SampleAnalysis::extractNotes (*s, getHostBpm());
+    if (events.empty()) return {};
+    return ChordGen::writeMidiFile (events, s->name + " notes", getHostBpm());
+}
+
+juce::File IcewaterProcessor::chopSample (juce::File& chopDirOut)
+{
+    auto s = getSample();
+    if (s == nullptr) return {};
+    auto chopped = std::make_shared<SampleData> (*s);
+    chopped->slices = SampleAnalysis::detectSlices (*chopped);
+    chopDirOut = SampleAnalysis::writeChops (*chopped, juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("WXRST").getChildFile ("Chops"));
+    setSample (chopped);
+    if (auto* p = apvts.getParameter (ID::smpChop)) p->setValueNotifyingHost (1.f);
+    return ChordGen::writeMidiFile (SampleAnalysis::chopEvents (*chopped, getHostBpm()), s->name + " chops", getHostBpm());
 }
 
 void IcewaterProcessor::setCurrentProgram (int index) { loadPreset (index); }
@@ -259,6 +330,12 @@ void IcewaterProcessor::setStateInformation (const void* data, int sizeInBytes)
             setLayerPreset (melodyLayer, (int) apvts.state.getProperty ("melodyPreset", melodyPreset.load()));
             setLayerPreset (bassLayer, (int) apvts.state.getProperty ("bassPreset", bassPreset.load()));
             for (int l = 0; l < 3; ++l) layerEnabled[l] = (bool) apvts.state.getProperty ("layer" + juce::String (l), layerEnabled[l].load());
+            const juce::String up = apvts.state.getProperty ("userPreset", "").toString();
+            currentUserPreset = -1;
+            for (int i = 0; i < (int) userPresets.size(); ++i) if (userPresets[(size_t) i].name == up) currentUserPreset = i;
+            const juce::String sp = apvts.state.getProperty ("samplePath", "").toString();
+            if (sp.isNotEmpty() && juce::File (sp).existsAsFile())
+                if (auto smp = SampleAnalysis::load (juce::File (sp))) setSample (smp);
         }
 }
 

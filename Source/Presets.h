@@ -10,7 +10,7 @@ struct Preset
     std::vector<std::pair<const char*, float>> values; // param id -> value in real units
 };
 
-inline const juce::StringArray presetCategories { "All", "Pads", "Keys", "808", "Bass", "Synth", "Synthwave", "16-Bit" };
+inline const juce::StringArray presetCategories { "All", "Pads", "Keys", "808", "Bass", "Synth", "Synthwave", "16-Bit", "Drift", "User" };
 
 // Any param not listed falls back to its default (see Params.h). Values are real-world units.
 inline const std::vector<Preset>& getPresets()

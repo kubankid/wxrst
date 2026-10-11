@@ -6,6 +6,7 @@
 #include "Params.h"
 #include "SynthVoice.h"
 #include "Presets.h"
+#include "Sampler.h"
 
 // One complete synth voice-stack + FX chain, driven by a flat id -> value map.
 // The main layer's map is refreshed from the APVTS every block; the melody / 808 layers
@@ -52,9 +53,12 @@ public:
         reverb.prepare (spec);
         masterGain.prepare (spec); masterGain.setRampDurationSeconds (0.02);
         holdCounter = 0.f; tailSamples = 0;
+        sampler.prepare (sampleRate);
     }
 
-    void allNotesOff() { synth.allNotesOff (0, true); monoHeld.clear(); }
+    void allNotesOff() { synth.allNotesOff (0, true); monoHeld.clear(); sampler.allNotesOff(); }
+
+    SamplePlayer sampler; // main layer only: the processor hands it the loaded sample
 
     // Renders into `buffer` (which is cleared first). Returns false if the layer is silent and nothing was rendered.
     bool process (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -63,7 +67,7 @@ public:
         buffer.clear();
         updateVoiceParams();
 
-        bool anyActive = false;
+        bool anyActive = sampler.anyActive();
         for (int i = 0; i < synth.getNumVoices(); ++i) if (synth.getVoice (i)->isVoiceActive()) { anyActive = true; break; }
         if (anyActive || ! midi.isEmpty()) tailSamples = (int) (sr * 8.0);
         if (tailSamples <= 0) return false;
@@ -99,6 +103,26 @@ public:
         else monoHeld.clear();
 
         synth.renderNextBlock (buffer, midi, 0, n);
+
+        // ---- Sample layer: same MIDI, same amp envelope, summed before the FX ----
+        {
+            SampleParams sp;
+            sp.level = get (ID::smpLevel); sp.root = (int) get (ID::smpRoot); sp.tune = get (ID::smpTune);
+            sp.start = juce::jmin (get (ID::smpStart), get (ID::smpEnd)); sp.end = juce::jmax (get (ID::smpStart), get (ID::smpEnd));
+            sp.loop = get (ID::smpLoop) > 0.5f; sp.reverse = get (ID::smpRev) > 0.5f; sp.chop = get (ID::smpChop) > 0.5f;
+            sp.amp = vp.amp;
+            int pos = 0;
+            for (const auto meta : midi)
+            {
+                const int t = juce::jlimit (0, n, meta.samplePosition);
+                if (t > pos) { sampler.render (buffer, pos, t - pos, sp); pos = t; }
+                const auto m = meta.getMessage();
+                if (m.isNoteOn()) sampler.noteOn (m.getNoteNumber(), m.getFloatVelocity(), sp);
+                else if (m.isNoteOff()) sampler.noteOff (m.getNoteNumber());
+                else if (m.isAllNotesOff() || m.isAllSoundOff()) sampler.allNotesOff();
+            }
+            if (n > pos) sampler.render (buffer, pos, n - pos, sp);
+        }
         if (buffer.getNumChannels() < 2) return true;
         auto* L = buffer.getWritePointer (0);
         auto* R = buffer.getWritePointer (1);

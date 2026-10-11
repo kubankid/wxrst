@@ -124,6 +124,53 @@ private:
     bool dragging = false;
 };
 
+// Waveform + drop zone for the SAMPLE section
+class WaveformView : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer
+{
+public:
+    WaveformView (IcewaterProcessor& p) : proc (p) { startTimerHz (4); }
+    void paint (juce::Graphics& g) override;
+    bool isInterestedInFileDrag (const juce::StringArray& files) override
+    {
+        for (auto& f : files) if (juce::File (f).hasFileExtension ("wav;aif;aiff;mp3;flac;ogg;m4a")) return true;
+        return false;
+    }
+    void fileDragEnter (const juce::StringArray&, int, int) override { hover = true; repaint(); }
+    void fileDragExit (const juce::StringArray&) override { hover = false; repaint(); }
+    void filesDropped (const juce::StringArray& files, int, int) override
+    {
+        hover = false;
+        for (auto& f : files) if (proc.loadSampleFile (juce::File (f))) break;
+        repaint();
+    }
+private:
+    void timerCallback() override { auto s = proc.getSample(); if (s.get() != lastShown) { lastShown = s.get(); repaint(); } }
+    IcewaterProcessor& proc;
+    const SampleData* lastShown = nullptr;
+    bool hover = false;
+};
+
+// Drag a generated file (MIDI clip) out into FL
+class FileDragPad : public juce::Component
+{
+public:
+    FileDragPad (const juce::String& label) : label (label) {}
+    void setFile (const juce::File& f) { file = f; repaint(); }
+    void paint (juce::Graphics& g) override;
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (dragging || ! file.existsAsFile() || e.getDistanceFromDragStart() < 8) return;
+        dragging = true;
+        if (auto* c = juce::DragAndDropContainer::findParentDragContainerFor (this))
+            c->performExternalDragDropOfFiles ({ file.getFullPathName() }, false, this, [this] { dragging = false; });
+    }
+    void mouseDown (const juce::MouseEvent&) override { dragging = false; }
+private:
+    juce::String label;
+    juce::File file;
+    bool dragging = false;
+};
+
 class IcewaterEditor : public juce::AudioProcessorEditor, public juce::DragAndDropContainer, private juce::Timer
 {
 public:
@@ -151,9 +198,14 @@ private:
           lfo { "LFO" }, pitchP { "PITCH / VOICE" }, global { "GLOBAL" }, lofi { "LO-FI" }, chorusP { "CHORUS" }, delayP { "DELAY" }, verbP { "REVERB" };
 
     juce::ComboBox oscAWave, oscBWave, lfoShape, filtType, voiceMode, presetBox, categoryBox;
+    juce::TextButton saveBtn { "SAVE" };
+    void saveUserPresetDialog();
+    void loadPresetById (int itemId);   // factory: index + 1, user: kUserIdBase + index
+    static constexpr int kUserIdBase = 10000;
+    int lastUserPreset = -1;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> voiceModeAtt;
     void rebuildPresetList();
-    std::vector<int> visiblePresets; // indices into getPresets() for the current category
+    std::vector<int> visiblePresets; // combo item ids for the current category
     juce::ToggleButton oscAOn { "ON" }, oscBOn { "ON" };
     juce::TextButton prevBtn { "<" }, nextBtn { ">" };
     DiceButton diceBtn;
@@ -166,6 +218,15 @@ private:
     EnvDisplay ampEnvDisp { proc.apvts, ID::ampA, ID::ampD, ID::ampS, ID::ampR };
     EnvDisplay filtEnvDisp { proc.apvts, ID::fA, ID::fD, ID::fS, ID::fR };
     int lastProgram = -1;
+
+    // Sample section
+    Panel sampleP { "SAMPLE  -  drop a WAV / MP3 here, play it on the keys, run it through the lo-fi chain" };
+    WaveformView waveform { proc };
+    juce::TextButton loadSampleBtn { "LOAD" }, toMidiBtn { "TO MIDI" }, chopBtn { "CHOP IT" };
+    juce::ToggleButton smpLoopT { "LOOP" }, smpRevT { "REV" }, smpChopT { "CHOP" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> smpLoopAtt, smpRevAtt, smpChopAtt;
+    FileDragPad notesPad { "DRAG NOTES >>" }, chopsPad { "DRAG CHOPS >>" };
+    std::unique_ptr<juce::FileChooser> chooser;
 
     // Chord generator
     void generateChords();

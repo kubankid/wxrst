@@ -386,6 +386,76 @@ void MidiDragPad::paint (juce::Graphics& g)
     }
 }
 
+void WaveformView::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    g.setColour (screen);
+    g.fillRoundedRectangle (r, 6.f);
+    auto s = proc.getSample();
+    g.setColour (hover ? ice : (s != nullptr ? ice.withAlpha (0.5f) : panelEdge));
+    g.drawRoundedRectangle (r.reduced (0.5f), 6.f, hover ? 2.f : 1.f);
+
+    if (s == nullptr)
+    {
+        g.setColour (dimText);
+        g.setFont (juce::Font (juce::FontOptions (12.f)));
+        g.drawText (hover ? "Drop it" : "Drop a sample here (or hit LOAD)", getLocalBounds(), juce::Justification::centred);
+        return;
+    }
+
+    auto area = r.reduced (4.f, 4.f);
+    const float startF = proc.apvts.getRawParameterValue (ID::smpStart)->load();
+    const float endF = proc.apvts.getRawParameterValue (ID::smpEnd)->load();
+    const float a = juce::jmin (startF, endF), b = juce::jmax (startF, endF);
+    // shade outside start/end
+    g.setColour (juce::Colours::black.withAlpha (0.45f));
+    g.fillRect (area.withWidth (area.getWidth() * a));
+    g.fillRect (area.withLeft (area.getX() + area.getWidth() * b));
+
+    // slices
+    if (! s->slices.empty())
+    {
+        g.setColour (iceGlow.withAlpha (0.35f));
+        for (auto& sl : s->slices)
+        {
+            const float x = area.getX() + area.getWidth() * (float) sl.first / (float) juce::jmax (1, s->length());
+            g.drawVerticalLine ((int) x, area.getY(), area.getBottom());
+        }
+    }
+
+    // waveform
+    juce::Path pth;
+    const float midY = area.getCentreY(), half = area.getHeight() * 0.48f;
+    const int nb = (int) s->peaks.size();
+    for (int i = 0; i < nb; ++i)
+    {
+        const float x = area.getX() + area.getWidth() * (float) i / (float) (nb - 1);
+        const float v = juce::jlimit (0.f, 1.f, s->peaks[(size_t) i] * 1.2f);
+        pth.addRectangle (x, midY - half * v, juce::jmax (1.f, area.getWidth() / (float) nb), juce::jmax (1.f, 2.f * half * v));
+    }
+    g.setColour (ice.withAlpha (0.85f));
+    g.fillPath (pth);
+
+    g.setColour (text);
+    g.setFont (juce::Font (juce::FontOptions (11.f, juce::Font::bold)));
+    juce::String info = s->name + "   " + juce::String (s->length() / s->sampleRate, 1) + "s";
+    if (! s->slices.empty()) info += "   " + juce::String ((int) s->slices.size()) + " chops (C3 up)";
+    g.drawText (info, getLocalBounds().reduced (8, 4), juce::Justification::topLeft);
+}
+
+void FileDragPad::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    const bool has = file.existsAsFile();
+    g.setColour (screen);
+    g.fillRoundedRectangle (r, 6.f);
+    g.setColour (has ? ice.withAlpha (0.6f) : panelEdge);
+    g.drawRoundedRectangle (r.reduced (0.5f), 6.f, 1.f);
+    g.setColour (has ? ice : dimText);
+    g.setFont (juce::Font (juce::FontOptions (11.f, juce::Font::bold)));
+    g.drawText (has ? label : juce::String ("-"), getLocalBounds(), juce::Justification::centred);
+}
+
 void MidiDragPad::mouseDrag (const juce::MouseEvent& e)
 {
     if (dragging || ! file.existsAsFile() || e.getDistanceFromDragStart() < 8) return;
@@ -460,21 +530,25 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
     categoryBox.onChange = [this]
     {
         rebuildPresetList();
-        if (! visiblePresets.empty() && std::find (visiblePresets.begin(), visiblePresets.end(), proc.getCurrentProgram()) == visiblePresets.end())
-            proc.loadPreset (visiblePresets.front());
-        lastProgram = -1;
+        const int curId = proc.currentUserPreset.load() >= 0 ? kUserIdBase + proc.currentUserPreset.load() : proc.getCurrentProgram() + 1;
+        if (! visiblePresets.empty() && std::find (visiblePresets.begin(), visiblePresets.end(), curId) == visiblePresets.end())
+            loadPresetById (visiblePresets.front());
+        lastProgram = -1; lastUserPreset = -2;
     };
     rebuildPresetList();
-    presetBox.onChange = [this] { if (presetBox.getSelectedId() > 0) proc.loadPreset (presetBox.getSelectedId() - 1); };
+    presetBox.onChange = [this] { if (presetBox.getSelectedId() > 0) loadPresetById (presetBox.getSelectedId()); };
     auto step = [this] (int dir)
     {
         if (visiblePresets.empty()) return;
-        const int cur = proc.getCurrentProgram();
+        const int cur = proc.currentUserPreset.load() >= 0 ? kUserIdBase + proc.currentUserPreset.load() : proc.getCurrentProgram() + 1;
         int pos = 0;
         for (size_t k = 0; k < visiblePresets.size(); ++k) if (visiblePresets[k] == cur) pos = (int) k;
         pos = (pos + dir + (int) visiblePresets.size()) % (int) visiblePresets.size();
-        proc.loadPreset (visiblePresets[(size_t) pos]);
+        loadPresetById (visiblePresets[(size_t) pos]);
     };
+    saveBtn.setTooltip ("Save the current sound as a user preset");
+    saveBtn.onClick = [this] { saveUserPresetDialog(); };
+    addAndMakeVisible (saveBtn);
     prevBtn.onClick = [step] { step (-1); };
     nextBtn.onClick = [step] { step (1); };
     diceBtn.onClick = [this] { proc.randomiseSound(); };
@@ -498,6 +572,31 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
     const auto envTheme = juce::SystemStats::getEnvironmentVariable ("ICEWATER_THEME", "");
     if (envTheme.isNotEmpty()) { midnightTab.setToggleState (envTheme.getIntValue() == 1, juce::dontSendNotification); applyTheme (envTheme.getIntValue()); }
     else                       { applyTheme (0); syncThemeToPreset (proc.getCurrentProgram()); }
+
+    // Sample section
+    addAndMakeVisible (sampleP);
+    sampleP.setBufferedToImage (false); // waveform changes, don't cache the panel
+    sampleP.addAndMakeVisible (waveform);
+    for (auto* b : { &loadSampleBtn, &toMidiBtn, &chopBtn }) sampleP.addAndMakeVisible (b);
+    for (auto* t : { &smpLoopT, &smpRevT, &smpChopT }) sampleP.addAndMakeVisible (t);
+    smpLoopAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, ID::smpLoop, smpLoopT);
+    smpRevAtt  = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, ID::smpRev, smpRevT);
+    smpChopAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, ID::smpChop, smpChopT);
+    addKnob (sampleP, ID::smpLevel, "LEVEL"); addKnob (sampleP, ID::smpRoot, "ROOT"); addKnob (sampleP, ID::smpTune, "TUNE");
+    addKnob (sampleP, ID::smpStart, "START"); addKnob (sampleP, ID::smpEnd, "END");
+    sampleP.addAndMakeVisible (notesPad); sampleP.addAndMakeVisible (chopsPad);
+    loadSampleBtn.onClick = [this]
+    {
+        chooser = std::make_unique<juce::FileChooser> ("Load a sample", juce::File::getSpecialLocation (juce::File::userHomeDirectory),
+                                                       "*.wav;*.aif;*.aiff;*.mp3;*.flac;*.ogg;*.m4a");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                              [this] (const juce::FileChooser& fc) { if (fc.getResult().existsAsFile()) proc.loadSampleFile (fc.getResult()); });
+    };
+    toMidiBtn.setTooltip ("Pitch-track the sample into a MIDI clip (melodies, bass, vocals)");
+    toMidiBtn.onClick = [this] { notesPad.setFile (proc.extractNotesMidi()); };
+    chopBtn.setTooltip ("Slice the sample at transients: each slice goes on its own key from C3 up, WAVs land in Documents/WXRST/Chops");
+    chopBtn.onClick = [this] { juce::File dir; chopsPad.setFile (proc.chopSample (dir)); };
+    for (auto* k : { &oscAWave }) juce::ignoreUnused (k);
 
     // Chord generator
     auto setupChordCombo = [&] (juce::ComboBox& box, juce::Label& lbl, const juce::StringArray& items, int def)
@@ -562,7 +661,7 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
 
     startTimerHz (10);
     timerCallback();
-    setSize (980, 852);
+    setSize (980, 988);
 }
 
 void IcewaterEditor::generateChords()
@@ -628,6 +727,36 @@ Knob& IcewaterEditor::addKnob (Panel& panel, const char* id, const juce::String&
     return *k;
 }
 
+void IcewaterEditor::loadPresetById (int itemId)
+{
+    if (itemId >= kUserIdBase) proc.loadUserPreset (itemId - kUserIdBase);
+    else if (itemId > 0) proc.loadPreset (itemId - 1);
+}
+
+void IcewaterEditor::saveUserPresetDialog()
+{
+    const int up = proc.currentUserPreset.load();
+    const juce::String suggested = up >= 0 ? proc.userPresets[(size_t) up].name : juce::String (getPresets()[(size_t) proc.getCurrentProgram()].name) + " 2";
+    auto* w = new juce::AlertWindow ("Save preset", "Name your sound. It goes in Documents/WXRST/Presets and shows up under the User category.",
+                                     juce::MessageBoxIconType::NoIcon);
+    w->addTextEditor ("name", suggested, "Name");
+    w->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    w->setLookAndFeel (&lnf);
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([this, w] (int result)
+    {
+        const juce::String name = w->getTextEditorContents ("name").trim();
+        w->setLookAndFeel (nullptr);
+        delete w;
+        if (result != 1 || name.isEmpty()) return;
+        proc.saveUserPreset (name);
+        const int userIdx = presetCategories.indexOf ("User");
+        if (userIdx >= 0) categoryBox.setSelectedId (userIdx + 1, juce::dontSendNotification);
+        rebuildPresetList();
+        lastProgram = -1; lastUserPreset = -2;
+    }), false);
+}
+
 void IcewaterEditor::rebuildPresetList()
 {
     const auto cat = presetCategories[categoryBox.getSelectedId() - 1];
@@ -638,26 +767,42 @@ void IcewaterEditor::rebuildPresetList()
         if (cat == "All" || cat == presets[(size_t) i].category)
         {
             presetBox.addItem (presets[(size_t) i].name, i + 1);
-            visiblePresets.push_back (i);
+            visiblePresets.push_back (i + 1);
         }
-    presetBox.setSelectedId (proc.getCurrentProgram() + 1, juce::dontSendNotification);
+    if (cat == "All" || cat == "User")
+    {
+        if (cat == "All" && ! proc.userPresets.empty()) presetBox.addSeparator();
+        for (int i = 0; i < (int) proc.userPresets.size(); ++i)
+        {
+            presetBox.addItem (proc.userPresets[(size_t) i].name, kUserIdBase + i);
+            visiblePresets.push_back (kUserIdBase + i);
+        }
+        if (cat == "User" && proc.userPresets.empty()) presetBox.setTextWhenNothingSelected ("No user presets yet - hit SAVE");
+    }
+    if (cat == "Drift") presetBox.setTextWhenNothingSelected ("Drift - coming soon");
+    const int up = proc.currentUserPreset.load();
+    presetBox.setSelectedId (up >= 0 ? kUserIdBase + up : proc.getCurrentProgram() + 1, juce::dontSendNotification);
 }
 
 void IcewaterEditor::timerCallback()
 {
     const int prog = proc.getCurrentProgram();
-    if (prog != lastProgram)
+    const int up = proc.currentUserPreset.load();
+    if (prog != lastProgram || up != lastUserPreset)
     {
-        lastProgram = prog;
-        syncThemeToPreset (prog);
-        if (presetBox.indexOfItemId (prog + 1) < 0)
+        lastProgram = prog; lastUserPreset = up;
+        if (up < 0) syncThemeToPreset (prog);   // user presets keep whatever look is on
+        const int id = up >= 0 ? kUserIdBase + up : prog + 1;
+        if (presetBox.indexOfItemId (id) < 0)
         {
             // current preset isn't in the chosen category: switch category to "All" so it shows
+            // (unless the category is deliberately empty, e.g. Drift)
+            if (visiblePresets.empty()) { presetBox.setSelectedId (0, juce::dontSendNotification); return; }
             categoryBox.setSelectedId (1, juce::dontSendNotification);
             rebuildPresetList();
             return;
         }
-        presetBox.setSelectedId (prog + 1, juce::dontSendNotification);
+        presetBox.setSelectedId (id, juce::dontSendNotification);
     }
 }
 
@@ -694,7 +839,8 @@ void IcewaterEditor::resized()
     nextBtn.setBounds (562, 22, 26, 28);
     diceBtn.setBounds (596, 20, 32, 32);
     midnightTab.setBounds (638, 22, 84, 28);
-    scope.setBounds (734, 12, 230, 52);
+    saveBtn.setBounds (730, 22, 52, 28);
+    scope.setBounds (792, 12, 172, 52);
 
     // Row 1
     oscA.setBounds (16, 82, 300, 215);
@@ -763,8 +909,29 @@ void IcewaterEditor::resized()
     layoutKnobs (delayP.getLocalBounds().reduced (8).withTrimmedTop (24), { K (ID::delayMix), K (ID::delayTime), K (ID::delayFb) });
     layoutKnobs (verbP.getLocalBounds().reduced (8).withTrimmedTop (24), { K (ID::verbMix), K (ID::verbSize), K (ID::verbDamp) });
 
-    // Row 4 (chord engine)
-    chordsP.setBounds (16, 642, 948, 200);
+    // Row 4 (sample)
+    sampleP.setBounds (16, 642, 948, 128);
+    {
+        auto r = sampleP.getLocalBounds().reduced (10).withTrimmedTop (24);
+        waveform.setBounds (r.removeFromLeft (330));
+        r.removeFromLeft (8);
+        auto btns = r.removeFromLeft (80);
+        loadSampleBtn.setBounds (btns.removeFromTop (26)); btns.removeFromTop (5);
+        toMidiBtn.setBounds (btns.removeFromTop (26)); btns.removeFromTop (5);
+        chopBtn.setBounds (btns.removeFromTop (26));
+        r.removeFromLeft (8);
+        auto pads = r.removeFromRight (116);
+        notesPad.setBounds (pads.removeFromTop (42)); pads.removeFromTop (8);
+        chopsPad.setBounds (pads.removeFromTop (42));
+        r.removeFromRight (8);
+        auto tog = r.removeFromRight (62);
+        smpLoopT.setBounds (tog.removeFromTop (28)); smpRevT.setBounds (tog.removeFromTop (28)); smpChopT.setBounds (tog.removeFromTop (28));
+        r.removeFromRight (4);
+        layoutKnobs (r, { K (ID::smpLevel), K (ID::smpRoot), K (ID::smpTune), K (ID::smpStart), K (ID::smpEnd) });
+    }
+
+    // Row 5 (chord engine)
+    chordsP.setBounds (16, 778, 948, 200);
     {
         auto r = chordsP.getLocalBounds().reduced (10).withTrimmedTop (28);
         auto top = r.removeFromTop (26);
@@ -801,7 +968,7 @@ void IcewaterEditor::resized()
     }
 
     std::vector<juce::Rectangle<int>> panelRects;
-    for (auto* pn : { &oscA, &oscB, &filter, &ampEnv, &filtEnv, &lfo, &pitchP, &global, &lofi, &chorusP, &delayP, &verbP, &chordsP })
+    for (auto* pn : { &oscA, &oscB, &filter, &ampEnv, &filtEnv, &lfo, &pitchP, &global, &lofi, &chorusP, &delayP, &verbP, &sampleP, &chordsP })
         panelRects.push_back (pn->getBounds());
     panelRects.push_back (scope.getBounds());
     panelRects.push_back (presetBox.getBounds());
