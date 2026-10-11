@@ -196,9 +196,28 @@ namespace ChordGen
         sortEvents (prog.events);
 
         // --- melody ---------------------------------------------------------------
+        // Melodies lean on the key's 1st, 4th and 5th degrees (tonic / subdominant / dominant):
+        // every chord start and every downbeat prefers one of them, stepwise runs tend to land on
+        // them, and the last note of the loop resolves to the 1st or 5th.
         {
             int lastNote = -1;
             auto inScale = [&] (int n) { const int pc = ((n - o.key) % 12 + 12) % 12; for (int k = 0; k < 7; ++k) if (scale[k] == pc) return true; return false; };
+            const int anchorPc[3] = { (o.key + scale[0]) % 12, (o.key + scale[3]) % 12, (o.key + scale[4]) % 12 };
+            auto isAnchor = [&] (int n) { const int pc = (n % 12 + 12) % 12; return pc == anchorPc[0] || pc == anchorPc[1] || pc == anchorPc[2]; };
+            // nearest anchor-degree note to a target pitch, inside the melody window
+            auto nearestAnchor = [&] (int target, bool avoidSame, const std::vector<int>& preferPcs)
+            {
+                int best = -1, bestScore = 1000;
+                for (int n = 70; n <= 88; ++n)
+                {
+                    if (! isAnchor (n)) continue;
+                    if (avoidSame && n == target) continue;
+                    int score = std::abs (n - target) * 2;
+                    if (std::find (preferPcs.begin(), preferPcs.end(), (n % 12 + 12) % 12) != preferPcs.end()) score -= 3; // also a chord tone
+                    if (score < bestScore) { bestScore = score; best = n; }
+                }
+                return best;
+            };
 
             for (auto& c : prog.chords)
             {
@@ -217,8 +236,16 @@ namespace ChordGen
                     const float restProb = (o.style == 0 || o.style == 5 || o.style == 8) ? 0.5f : (o.style == 6 ? 0.4f : 0.3f);
                     if (! first && chance (restProb)) { t += len; continue; }
 
+                    const bool downbeat = std::abs (t - std::round (t)) < 0.01;
                     int note;
-                    if (first || chance (0.55f))
+                    if (first || (downbeat && chance (0.7f)))
+                    {
+                        // land on a 1 / 4 / 5 degree note near the last note
+                        const int target = lastNote < 0 ? 78 : lastNote;
+                        note = nearestAnchor (target, lastNote >= 0 && chance (0.7f), tones);
+                        if (note < 0) note = 72 + tones.front();
+                    }
+                    else if (chance (0.5f))
                     {
                         // chord tone near the last note
                         int best = -1, bestDist = 100;
@@ -235,11 +262,17 @@ namespace ChordGen
                     }
                     else
                     {
-                        // stepwise scale motion
+                        // stepwise scale motion that likes to settle on a 1 / 4 / 5 degree
                         const int dir = chance (0.5f) ? 1 : -1;
                         note = lastNote < 0 ? 76 : lastNote;
                         for (int step = 0; step < 3; ++step) { note += dir; if (inScale (note)) break; }
                         if (! inScale (note)) note = lastNote;
+                        if (! isAnchor (note) && chance (0.4f))
+                        {
+                            int n2 = note;
+                            for (int step = 0; step < 4 && ! isAnchor (n2); ++step) { n2 += dir; while (! inScale (n2)) n2 += dir; }
+                            if (isAnchor (n2)) note = n2;
+                        }
                         note = juce::jlimit (70, 88, note);
                     }
 
@@ -249,6 +282,27 @@ namespace ChordGen
                     lastNote = note;
                     t += len;
                     first = false;
+                }
+            }
+            // resolve: the loop's final melody note sits on the 1st or 5th degree
+            if (! prog.melodyEvents.empty())
+            {
+                const int tonic = anchorPc[0], dom = anchorPc[2];
+                for (int i = (int) prog.melodyEvents.size() - 1; i >= 0; --i)
+                {
+                    auto& ev = prog.melodyEvents[(size_t) i];
+                    if (! ev.on) continue;
+                    const int pc = (ev.note % 12 + 12) % 12;
+                    if (pc == tonic || pc == dom) break;
+                    int best = ev.note, bestDist = 100;
+                    for (int n = 70; n <= 88; ++n)
+                    {
+                        const int npc = (n % 12 + 12) % 12;
+                        if ((npc == tonic || npc == dom) && std::abs (n - ev.note) < bestDist) { bestDist = std::abs (n - ev.note); best = n; }
+                    }
+                    for (auto& off : prog.melodyEvents) if (! off.on && off.note == ev.note && off.beat > ev.beat) { off.note = best; break; }
+                    ev.note = best;
+                    break;
                 }
             }
             sortEvents (prog.melodyEvents);

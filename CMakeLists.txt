@@ -71,3 +71,13 @@ target_link_libraries(ICEWATER PRIVATE
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags)
+
+# ---- offline chord-engine test (not shipped) ----
+option(ICEWATER_BUILD_TEST "Build the console chord-engine test" OFF)
+if(ICEWATER_BUILD_TEST)
+    juce_add_console_app(ICEWATER_TEST PRODUCT_NAME "ChordTest")
+    target_sources(ICEWATER_TEST PRIVATE Source/ChordTest.cpp)
+    target_include_directories(ICEWATER_TEST PRIVATE Source)
+    target_compile_definitions(ICEWATER_TEST PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(ICEWATER_TEST PRIVATE juce::juce_audio_basics juce::juce_core PUBLIC juce::juce_recommended_config_flags)
+endif()
