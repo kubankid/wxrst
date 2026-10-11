@@ -1,0 +1,267 @@
+#include "PluginProcessor.h"
+#include "PluginEditor.h"
+
+static int findPresetByName (const char* name)
+{
+    const auto& p = getPresets();
+    for (int i = 0; i < (int) p.size(); ++i) if (juce::String (p[(size_t) i].name) == name) return i;
+    return 0;
+}
+
+IcewaterProcessor::IcewaterProcessor()
+    : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+      apvts (*this, nullptr, "ICEWATER", createParameterLayout())
+{
+    for (auto* p : getParameters())
+        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
+        {
+            raw[rp->paramID] = apvts.getRawParameterValue (rp->paramID);
+            Engine::defaults()[rp->paramID.toStdString()] = rp->convertFrom0to1 (rp->getDefaultValue());
+        }
+    for (auto& e : engines) e.setToDefaults();
+
+    // sensible defaults for the other two layers
+    setLayerPreset (melodyLayer, findPresetByName ("Glass Rhodes"));
+    setLayerPreset (bassLayer, findPresetByName ("Ramzoid 808"));
+    layerEnabled[bassLayer] = false;
+}
+
+void IcewaterProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+{
+    sr = sampleRate;
+    for (auto& e : engines) e.prepare (sampleRate, samplesPerBlock);
+    layerBuffer.setSize (2, samplesPerBlock);
+}
+
+bool IcewaterProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+{
+    return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo()
+        || layouts.getMainOutputChannelSet() == juce::AudioChannelSet::mono();
+}
+
+void IcewaterProcessor::setLayerPreset (Layer l, int presetIndex)
+{
+    if (l == chordsLayer || ! juce::isPositiveAndBelow (presetIndex, (int) getPresets().size())) return;
+    (l == melodyLayer ? melodyPreset : bassPreset).store (presetIndex);
+    pendingLayerLoad[l].store (presetIndex);
+}
+
+void IcewaterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+{
+    juce::ScopedNoDenormals noDenormals;
+    const int n = buffer.getNumSamples();
+    buffer.clear();
+    if (buffer.getNumChannels() < 2) return;
+
+    // main layer follows the knobs
+    for (auto& [id, ptr] : raw) engines[chordsLayer].values[id.toStdString()] = ptr->load();
+    // other layers: apply any preset change requested from the UI
+    for (int l = 1; l < 3; ++l)
+    {
+        const int idx = pendingLayerLoad[l].exchange (-1);
+        if (idx >= 0) { engines[l].loadPreset (getPresets()[(size_t) idx]); engines[l].allNotesOff(); }
+    }
+
+    if (auto* ph = getPlayHead())
+        if (auto pos = ph->getPosition())
+            if (auto bpm = pos->getBpm()) hostBpm.store (*bpm);
+
+    // ---- Chord player ------------------------------------------------------------
+    layerMidi[chordsLayer].clear(); layerMidi[melodyLayer].clear(); layerMidi[bassLayer].clear();
+    layerMidi[chordsLayer].addEvents (midi, 0, n, 0);   // live MIDI always plays the main sound
+
+    if (chordStopRequested.exchange (false))
+    {
+        for (int l = 0; l < 3; ++l)
+        {
+            for (int note : heldNotes[l]) layerMidi[l].addEvent (juce::MidiMessage::noteOff (1, note), 0);
+            heldNotes[l].clear(); nextEvt[l] = 0;
+        }
+        playBeat = 0.0; currentChord.store (-1); playPosition.store (0.0);
+    }
+
+    if (chordPlaying.load())
+    {
+        std::shared_ptr<const Progression> prog;
+        { const juce::ScopedTryLock sl (progLock); if (sl.isLocked()) prog = progression; }
+
+        if (prog != nullptr && ! prog->events.empty())
+        {
+            const double beatsPerSample = hostBpm.load() / 60.0 / sr;
+            const std::vector<NoteEvent>* lists[3] { &prog->events, &prog->melodyEvents, &prog->bassEvents };
+
+            auto emit = [&] (int l, const NoteEvent& e, int offset)
+            {
+                if (e.on)
+                {
+                    if (! layerEnabled[l].load()) return;
+                    layerMidi[l].addEvent (juce::MidiMessage::noteOn (1, e.note, e.vel), offset);
+                    heldNotes[l].push_back (e.note);
+                }
+                else
+                {
+                    layerMidi[l].addEvent (juce::MidiMessage::noteOff (1, e.note), offset);
+                    heldNotes[l].erase (std::remove (heldNotes[l].begin(), heldNotes[l].end(), e.note), heldNotes[l].end());
+                }
+            };
+
+            for (int i = 0; i < n; ++i)
+            {
+                if (playBeat >= prog->totalBeats)
+                {
+                    for (int l = 0; l < 3; ++l)
+                    {
+                        for (int note : heldNotes[l]) layerMidi[l].addEvent (juce::MidiMessage::noteOff (1, note), i);
+                        heldNotes[l].clear(); nextEvt[l] = 0;
+                    }
+                    playBeat -= prog->totalBeats;
+                }
+                for (int l = 0; l < 3; ++l)
+                    while (nextEvt[l] < (int) lists[l]->size() && playBeat >= (*lists[l])[(size_t) nextEvt[l]].beat)
+                        emit (l, (*lists[l])[(size_t) nextEvt[l]++], i);
+                playBeat += beatsPerSample;
+            }
+
+            int idx = -1;
+            for (int c = 0; c < (int) prog->chords.size(); ++c)
+                if (playBeat >= prog->chords[(size_t) c].startBeat) idx = c;
+            currentChord.store (idx);
+            playPosition.store (playBeat);
+        }
+    }
+
+    // ---- Render the three layers and sum --------------------------------------------
+    for (int l = 0; l < 3; ++l)
+    {
+        if (l == chordsLayer)
+        {
+            engines[l].process (buffer, layerMidi[l]);
+        }
+        else
+        {
+            layerBuffer.setSize (2, n, false, false, true);
+            if (engines[l].process (layerBuffer, layerMidi[l]))
+                for (int ch = 0; ch < 2; ++ch) buffer.addFrom (ch, 0, layerBuffer, ch, 0, n);
+        }
+    }
+
+    // ---- Scope + meter -------------------------------------------------------------
+    auto* L = buffer.getReadPointer (0);
+    auto* R = buffer.getReadPointer (1);
+    int w = scopeWrite.load();
+    for (int i = 0; i < n; ++i)
+    {
+        scope[(size_t) w].store (0.5f * (L[i] + R[i]));
+        w = (w + 1) % scopeSize;
+    }
+    scopeWrite.store (w);
+    levelL.store (buffer.getRMSLevel (0, 0, n));
+    levelR.store (buffer.getRMSLevel (1, 0, n));
+}
+
+// ---------------------------------------------------------------------------
+void IcewaterProcessor::setProgression (std::shared_ptr<const Progression> p)
+{
+    const bool wasPlaying = chordPlaying.load();
+    if (wasPlaying) setChordPlaying (false);
+    { const juce::ScopedLock sl (progLock); progression = std::move (p); }
+    if (wasPlaying) setChordPlaying (true);
+}
+
+void IcewaterProcessor::setChordPlaying (bool shouldPlay)
+{
+    if (shouldPlay == chordPlaying.load()) return;
+    if (! shouldPlay) chordStopRequested.store (true);
+    chordPlaying.store (shouldPlay);
+}
+
+// Randomise the sound within "still sounds like a pad" ranges. Master/width untouched.
+void IcewaterProcessor::randomiseSound()
+{
+    juce::Random r;
+    auto set = [&] (const char* id, float value)
+    {
+        if (auto* p = apvts.getParameter (id)) p->setValueNotifyingHost (p->convertTo0to1 (value));
+    };
+    auto rf = [&] (float lo, float hi) { return lo + r.nextFloat() * (hi - lo); };
+    auto ri = [&] (int lo, int hi) { return r.nextInt (juce::Range<int> (lo, hi + 1)); };
+
+    set (ID::oscAOn, 1.f); set (ID::oscAWave, (float) ri (0, 5)); set (ID::oscAOct, (float) ri (-1, 0));
+    set (ID::oscASemi, 0.f); set (ID::oscAFine, rf (-8.f, 8.f)); set (ID::oscAUnison, (float) ri (2, 7));
+    set (ID::oscADetune, rf (8.f, 45.f)); set (ID::oscALevel, rf (0.5f, 0.85f));
+
+    set (ID::oscBOn, r.nextFloat() < 0.85f ? 1.f : 0.f); set (ID::oscBWave, (float) ri (0, 5)); set (ID::oscBOct, (float) ri (-1, 1));
+    const int bSemi[] = { 0, 0, 0, 7, 12, 5 };
+    set (ID::oscBSemi, (float) bSemi[ri (0, 5)]); set (ID::oscBFine, rf (-8.f, 8.f)); set (ID::oscBUnison, (float) ri (1, 4));
+    set (ID::oscBDetune, rf (5.f, 30.f)); set (ID::oscBLevel, rf (0.2f, 0.6f));
+
+    set (ID::subLevel, rf (0.f, 0.6f)); set (ID::noiseLevel, rf (0.f, 0.15f)); set (ID::drift, rf (0.1f, 0.6f));
+    set (ID::filtType, r.nextFloat() < 0.8f ? (float) ri (0, 1) : (float) ri (2, 3));
+    set (ID::filtCutoff, std::exp (rf (std::log (400.f), std::log (6000.f))));
+    set (ID::filtRes, rf (0.f, 0.45f)); set (ID::filtEnv, rf (0.f, 0.6f)); set (ID::filtKey, rf (0.2f, 0.6f)); set (ID::filtDrive, rf (0.f, 0.4f));
+
+    set (ID::ampA, rf (0.2f, 2.5f)); set (ID::ampD, rf (1.f, 3.f)); set (ID::ampS, rf (0.6f, 1.f)); set (ID::ampR, rf (1.f, 4.f));
+    set (ID::fA, rf (0.2f, 3.f)); set (ID::fD, rf (1.f, 4.f)); set (ID::fS, rf (0.2f, 0.7f)); set (ID::fR, rf (1.f, 4.f));
+    set (ID::lfoShape, r.nextFloat() < 0.7f ? 0.f : (float) ri (1, 4)); set (ID::lfoRate, rf (0.08f, 0.8f));
+    set (ID::lfoPitch, rf (0.f, 0.12f)); set (ID::lfoFilter, rf (-0.1f, 0.3f));
+
+    set (ID::crushBits, (float) ri (8, 14)); set (ID::crushRate, std::exp (rf (std::log (11000.f), std::log (40000.f))));
+    set (ID::lofiTone, std::exp (rf (std::log (3500.f), std::log (14000.f)))); set (ID::wow, rf (0.1f, 0.6f)); set (ID::wowRate, rf (0.2f, 1.2f));
+    set (ID::heat, rf (0.f, 0.5f)); set (ID::crackle, rf (0.f, 0.4f)); set (ID::dist, 0.f);
+    set (ID::voiceMode, 0.f); set (ID::pitchEnvAmt, r.nextFloat() < 0.3f ? rf (-3.f, 3.f) : 0.f); set (ID::pitchEnvDec, rf (0.05f, 0.5f));
+    set (ID::chorusMix, rf (0.3f, 0.8f)); set (ID::chorusRate, rf (0.15f, 0.6f)); set (ID::chorusDepth, rf (0.3f, 0.8f));
+    set (ID::delayMix, rf (0.f, 0.35f)); set (ID::delayTime, r.nextFloat() < 0.5f ? 0.375f : 0.5f); set (ID::delayFb, rf (0.3f, 0.6f));
+    set (ID::verbMix, rf (0.3f, 0.65f)); set (ID::verbSize, rf (0.7f, 1.f)); set (ID::verbDamp, rf (0.3f, 0.7f));
+}
+
+void IcewaterProcessor::loadPreset (int index)
+{
+    const auto& presets = getPresets();
+    if (index < 0 || index >= (int) presets.size()) return;
+    currentProgram = index;
+
+    for (auto* p : getParameters())
+        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
+            rp->setValueNotifyingHost (rp->getDefaultValue());
+
+    for (auto& [id, value] : presets[(size_t) index].values)
+        if (auto* rp = apvts.getParameter (id))
+            rp->setValueNotifyingHost (rp->convertTo0to1 (value));
+
+    apvts.state.setProperty ("program", index, nullptr);
+}
+
+void IcewaterProcessor::setCurrentProgram (int index) { loadPreset (index); }
+
+const juce::String IcewaterProcessor::getProgramName (int index)
+{
+    const auto& presets = getPresets();
+    return juce::isPositiveAndBelow (index, (int) presets.size()) ? presets[(size_t) index].name : "";
+}
+
+void IcewaterProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    apvts.state.setProperty ("program", currentProgram.load(), nullptr);
+    apvts.state.setProperty ("melodyPreset", melodyPreset.load(), nullptr);
+    apvts.state.setProperty ("bassPreset", bassPreset.load(), nullptr);
+    for (int l = 0; l < 3; ++l) apvts.state.setProperty ("layer" + juce::String (l), layerEnabled[l].load(), nullptr);
+    if (auto xml = apvts.copyState().createXml())
+        copyXmlToBinary (*xml, destData);
+}
+
+void IcewaterProcessor::setStateInformation (const void* data, int sizeInBytes)
+{
+    if (auto xml = getXmlFromBinary (data, sizeInBytes))
+        if (xml->hasTagName (apvts.state.getType()))
+        {
+            apvts.replaceState (juce::ValueTree::fromXml (*xml));
+            currentProgram = (int) apvts.state.getProperty ("program", 0);
+            setLayerPreset (melodyLayer, (int) apvts.state.getProperty ("melodyPreset", melodyPreset.load()));
+            setLayerPreset (bassLayer, (int) apvts.state.getProperty ("bassPreset", bassPreset.load()));
+            for (int l = 0; l < 3; ++l) layerEnabled[l] = (bool) apvts.state.getProperty ("layer" + juce::String (l), layerEnabled[l].load());
+        }
+}
+
+juce::AudioProcessorEditor* IcewaterProcessor::createEditor() { return new IcewaterEditor (*this); }
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new IcewaterProcessor(); }

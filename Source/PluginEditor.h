@@ -1,0 +1,156 @@
+#pragma once
+#include <juce_audio_processors/juce_audio_processors.h>
+#include "PluginProcessor.h"
+#include "LookAndFeel.h"
+
+// Animated aurora / ice-dust background. Glow is rendered at 1/8 scale and stretched (cheap + soft).
+class AnimatedBackground : public juce::Component, private juce::Timer
+{
+public:
+    AnimatedBackground();
+    void paint (juce::Graphics& g) override;
+    void resized() override;
+    void setAnimating (bool on) { animating = on; if (on) startTimerHz (24); else stopTimer(); repaint(); }
+    bool isAnimating() const { return animating; }
+    // Only the areas not covered by panels get repainted each frame
+    void setExclusions (const std::vector<juce::Rectangle<int>>& panels)
+    {
+        dirty.clear(); dirty.add (getLocalBounds());
+        for (auto& r : panels) dirty.subtract (r.reduced (2));
+    }
+private:
+    void timerCallback() override;
+    void renderGlow();
+    struct Blob { float x, y, r, dx, dy, phase; juce::Colour c; };
+    struct Particle { float x, y, vy, vx, size, phase, speed; };
+    std::vector<Blob> blobs;
+    std::vector<Particle> particles;
+    juce::Image glow;
+    juce::RectangleList<int> dirty;
+    float t = 0.f;
+    int frame = 0;
+    bool animating = true;
+};
+
+// Rotary knob with label underneath and value readout on hover
+struct Knob : public juce::Component
+{
+    Knob (juce::AudioProcessorValueTreeState& s, const juce::String& id, const juce::String& text);
+    void resized() override;
+    juce::Slider slider;
+    juce::Label label;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> att;
+};
+
+struct Panel : public juce::Component
+{
+    Panel (const juce::String& title) : title (title) {}
+    void paint (juce::Graphics& g) override;
+    juce::String title;
+};
+
+class Scope : public juce::Component, private juce::Timer
+{
+public:
+    Scope (IcewaterProcessor& p) : proc (p) { startTimerHz (30); }
+    void paint (juce::Graphics& g) override;
+private:
+    void timerCallback() override { repaint(); }
+    IcewaterProcessor& proc;
+};
+
+// ADSR curve display
+class EnvDisplay : public juce::Component, private juce::Timer
+{
+public:
+    EnvDisplay (juce::AudioProcessorValueTreeState& s, const char* a, const char* d, const char* su, const char* r)
+        : A (s.getRawParameterValue (a)), D (s.getRawParameterValue (d)), S (s.getRawParameterValue (su)), R (s.getRawParameterValue (r))
+    { startTimerHz (15); }
+    void paint (juce::Graphics& g) override;
+private:
+    void timerCallback() override
+    {
+        const float v = A->load() * 1.f + D->load() * 7.f + S->load() * 31.f + R->load() * 131.f;
+        if (v != lastSig) { lastSig = v; repaint(); }
+    }
+    float lastSig = -1.f;
+    std::atomic<float> *A, *D, *S, *R;
+};
+
+// Drag this onto FL's piano roll / playlist to drop the generated MIDI in
+class MidiDragPad : public juce::Component, private juce::Timer
+{
+public:
+    MidiDragPad (IcewaterProcessor& p, int kind) : proc (p), kind (kind) { startTimerHz (20); }
+    void setFile (const juce::File& f) { file = f; repaint(); }
+    void paint (juce::Graphics& g) override;
+    void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseDown (const juce::MouseEvent&) override { dragging = false; }
+private:
+    void timerCallback() override
+    {
+        const bool playing = proc.isChordPlaying();
+        const bool en = proc.layerEnabled[kind].load();
+        if (playing || wasPlaying || en != lastEnabled) repaint();
+        wasPlaying = playing; lastEnabled = en;
+    }
+    bool wasPlaying = false, lastEnabled = true;
+    IcewaterProcessor& proc;
+    int kind; // 0 chords, 1 melody, 2 bass
+    juce::File file;
+    bool dragging = false;
+};
+
+class IcewaterEditor : public juce::AudioProcessorEditor, public juce::DragAndDropContainer, private juce::Timer
+{
+public:
+    explicit IcewaterEditor (IcewaterProcessor&);
+    ~IcewaterEditor() override;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    void timerCallback() override;
+    void layoutKnobs (juce::Rectangle<int> area, std::initializer_list<Knob*> knobs);
+    Knob& addKnob (Panel& panel, const char* id, const juce::String& text);
+    void setupCombo (juce::ComboBox& box, const juce::StringArray& items, const char* id,
+                     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>& att, Panel& parent);
+
+    IcewaterProcessor& proc;
+    IceLookAndFeel lnf;
+    AnimatedBackground background;
+    juce::TextButton animBtn { "~" };
+    juce::OwnedArray<Knob> knobs;
+    std::map<juce::String, Knob*> knobById;
+
+    Panel oscA { "OSC A" }, oscB { "OSC B" }, filter { "FILTER" }, ampEnv { "AMP ENV" }, filtEnv { "FILTER ENV" },
+          lfo { "LFO" }, pitchP { "PITCH / VOICE" }, global { "GLOBAL" }, lofi { "LO-FI" }, chorusP { "CHORUS" }, delayP { "DELAY" }, verbP { "REVERB" };
+
+    juce::ComboBox oscAWave, oscBWave, lfoShape, filtType, voiceMode, presetBox, categoryBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> voiceModeAtt;
+    void rebuildPresetList();
+    std::vector<int> visiblePresets; // indices into getPresets() for the current category
+    juce::ToggleButton oscAOn { "ON" }, oscBOn { "ON" };
+    juce::TextButton prevBtn { "<" }, nextBtn { ">" }, diceBtn { "DICE" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oscAWaveAtt, oscBWaveAtt, lfoShapeAtt, filtTypeAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> oscAOnAtt, oscBOnAtt;
+    Scope scope { proc };
+    EnvDisplay ampEnvDisp { proc.apvts, ID::ampA, ID::ampD, ID::ampS, ID::ampR };
+    EnvDisplay filtEnvDisp { proc.apvts, ID::fA, ID::fD, ID::fS, ID::fR };
+    int lastProgram = -1;
+
+    // Chord generator
+    void generateChords();
+    Panel chordsP { "CHORD ENGINE" };
+    juce::ComboBox keyBox, scaleBox, styleBox, barsBox, rhythmBox;
+    juce::TextButton generateBtn { "GENERATE" }, playBtn { "PLAY" }, strumBtn { "STRUM" };
+    juce::Label keyLbl { {}, "KEY" }, scaleLbl { {}, "SCALE" }, styleLbl { {}, "STYLE" }, barsLbl { {}, "LEN" }, rhythmLbl { {}, "FEEL" };
+    MidiDragPad chordPad { proc, 0 }, melodyPad { proc, 1 }, bassPad { proc, 2 };
+    juce::TextButton layerBtn[3] { juce::TextButton ("CHORDS"), juce::TextButton ("MELODY"), juce::TextButton ("808") };
+    juce::ComboBox layerSound[2];       // melody / 808 sound pickers
+    juce::Label chordSoundLbl { {}, "main sound (knobs above)" };
+    unsigned chordSeed = (unsigned) juce::Time::currentTimeMillis();
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IcewaterEditor)
+};
