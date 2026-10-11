@@ -159,6 +159,7 @@ private:
     DiceButton diceBtn;
     TabButton midnightTab { "MIDNIGHT" };
     void applyTheme (int which);
+    void syncThemeToPreset (int program); // Synthwave / 16-Bit presets -> MIDNIGHT, everything else -> ICE
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oscAWaveAtt, oscBWaveAtt, lfoShapeAtt, filtTypeAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> oscAOnAtt, oscBOnAtt;
     Scope scope { proc };

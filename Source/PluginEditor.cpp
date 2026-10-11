@@ -481,17 +481,13 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
     diceBtn.setTooltip ("Roll the dice: randomise the sound");
     addAndMakeVisible (categoryBox); addAndMakeVisible (presetBox); addAndMakeVisible (prevBtn); addAndMakeVisible (nextBtn); addAndMakeVisible (diceBtn);
 
-    // MIDNIGHT MODE tab: 80s synthwave skin, saved with the plugin state
-    const int savedTheme = juce::SystemStats::getEnvironmentVariable ("ICEWATER_THEME", "").isNotEmpty()
-                         ? juce::SystemStats::getEnvironmentVariable ("ICEWATER_THEME", "0").getIntValue()
-                         : (int) proc.apvts.state.getProperty ("theme", 1); // Midnight by default
-    midnightTab.setTooltip ("Midnight Mode: 80s synthwave look");
+    // MIDNIGHT MODE: the skin follows the sound. Picking a Synthwave / 16-Bit preset flips to the 80s look,
+    // picking anything else flips back to ICE. The tab is a manual override until the next preset change.
+    midnightTab.setTooltip ("Midnight Mode: 80s synthwave look (follows the preset; click to override)");
     midnightTab.onClick = [this]
     {
         const bool on = midnightTab.getToggleState();
         applyTheme (on ? 1 : 0);
-        proc.apvts.state.setProperty ("theme", on ? 1 : 0, nullptr);
-        // flipping Midnight on jumps the browser to the Synthwave sounds
         if (on)
         {
             const int idx = presetCategories.indexOf ("Synthwave");
@@ -499,8 +495,9 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
         }
     };
     addAndMakeVisible (midnightTab);
-    midnightTab.setToggleState (savedTheme == 1, juce::dontSendNotification);
-    applyTheme (savedTheme);
+    const auto envTheme = juce::SystemStats::getEnvironmentVariable ("ICEWATER_THEME", "");
+    if (envTheme.isNotEmpty()) { midnightTab.setToggleState (envTheme.getIntValue() == 1, juce::dontSendNotification); applyTheme (envTheme.getIntValue()); }
+    else                       { applyTheme (0); syncThemeToPreset (proc.getCurrentProgram()); }
 
     // Chord generator
     auto setupChordCombo = [&] (juce::ComboBox& box, juce::Label& lbl, const juce::StringArray& items, int def)
@@ -590,6 +587,19 @@ IcewaterEditor::~IcewaterEditor()
     IceColours::applyTheme (0); // the LookAndFeel colours are global: leave them in the default state
 }
 
+void IcewaterEditor::syncThemeToPreset (int program)
+{
+    const auto& presets = getPresets();
+    if (program < 0 || program >= (int) presets.size()) return;
+    const juce::String cat = presets[(size_t) program].category;
+    const int want = (cat == "Synthwave" || cat == "16-Bit") ? 1 : 0;
+    if (want != IceColours::theme)
+    {
+        midnightTab.setToggleState (want == 1, juce::dontSendNotification);
+        applyTheme (want);
+    }
+}
+
 void IcewaterEditor::applyTheme (int which)
 {
     IceColours::applyTheme (which);
@@ -639,6 +649,7 @@ void IcewaterEditor::timerCallback()
     if (prog != lastProgram)
     {
         lastProgram = prog;
+        syncThemeToPreset (prog);
         if (presetBox.indexOfItemId (prog + 1) < 0)
         {
             // current preset isn't in the chosen category: switch category to "All" so it shows
