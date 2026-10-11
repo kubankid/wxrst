@@ -142,7 +142,7 @@ void AnimatedBackground::paint (juce::Graphics& g)
     }
 
     // logo with a slow shimmer (chrome-pink in MIDNIGHT)
-    g.setFont (juce::Font (juce::FontOptions (30.f, juce::Font::bold)));
+    g.setFont (juce::Font (juce::FontOptions (34.f, juce::Font::bold)));
     const float sh = 0.5f + 0.5f * std::sin (t * 0.6f);
     juce::ColourGradient logo (midnight ? juce::Colour (0xffffe08a) : IceColours::iceGlow, 20.f + sh * 60.f, 10.f,
                                midnight ? juce::Colour (0xffff2fa0) : IceColours::iceDeep, 260.f + sh * 60.f, 60.f, false);
@@ -151,13 +151,13 @@ void AnimatedBackground::paint (juce::Graphics& g)
         // dark halo so the chrome lettering stays readable over the sun
         g.setColour (IceColours::bg.withAlpha (0.75f));
         for (auto off : { juce::Point<int> (2, 2), juce::Point<int> (-1, 1), juce::Point<int> (1, -1), juce::Point<int> (0, 3) })
-            g.drawText ("DENNYDIDIT", 22 + off.x, 10 + off.y, 300, 40, juce::Justification::centredLeft);
+            g.drawText ("WXRST", 22 + off.x, 10 + off.y, 300, 40, juce::Justification::centredLeft);
     }
     g.setGradientFill (logo);
-    g.drawText ("DENNYDIDIT", 22, 10, 300, 40, juce::Justification::centredLeft);
+    g.drawText ("WXRST", 22, 10, 300, 40, juce::Justification::centredLeft);
     g.setColour (IceColours::dimText);
     g.setFont (juce::Font (juce::FontOptions (10.f)));
-    g.drawText (midnight ? "MIDNIGHT MODE  /  SYNTHWAVE  /  CS-80  /  16-BIT" : "LO-FI PADS  /  KEYS  /  808s  /  CHORD ENGINE",
+    g.drawText (midnight ? "THE WORST PLUGIN  /  MIDNIGHT MODE  /  SYNTHWAVE  /  16-BIT" : "THE WORST PLUGIN  /  LO-FI PADS  /  808s  /  CHORD ENGINE",
                 24, 48, 300, 14, juce::Justification::centredLeft);
 }
 

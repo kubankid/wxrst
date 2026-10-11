@@ -1,8 +1,8 @@
-# Denny Did It (DENNYDIDIT) — project handoff notes
+# WXRST ("The Worst Plugin", formerly Denny Did It) — project handoff notes
 
 Lo-fi / PS2-era / Drake-OVO pad, keys, 808 and bass synth with a built-in chord + melody + 808
 MIDI generator. Written entirely with Claude Code for Denny (music producer, FL Studio 2025,
-Apple M5 Max, macOS 27.2). Git repo since 2026-10-11, private remote https://github.com/kubankid/denny-did-it (JUCE is a git submodule). No tests. Last session: 2026-10-11.
+Apple M5 Max, macOS 27.2). Git repo since 2026-10-11, private remote https://github.com/kubankid/wxrst (renamed from denny-did-it) (JUCE is a git submodule). No tests. Last session: 2026-10-11.
 
 ## Build & install
 
@@ -14,15 +14,15 @@ auval -v aumu Dndi Dnny          # AU validation, passes
 ```
 
 - JUCE 8.0.10 lives in `./JUCE` (subdirectory, not a submodule). CMake 4.4.3, Apple clang, C++17.
-- CMake target is still `ICEWATER` (original name). PRODUCT_NAME "Denny Did It", PLUGIN_CODE `Dndi`,
+- CMake target is still `ICEWATER` (original name). PRODUCT_NAME "WXRST" (renamed from "Denny Did It" on 2026-10-11 at Denny's request; PLUGIN_CODE unchanged), PLUGIN_CODE `Dndi`,
   manufacturer `Dnny`, company DennyAudio, bundle id com.DennyAudio.ICEWATER.
 - Formats: VST3, AU, Standalone. COPY_PLUGIN_AFTER_BUILD installs to
-  `~/Library/Audio/Plug-Ins/VST3/Denny Did It.vst3` and `~/Library/Audio/Plug-Ins/Components/Denny Did It.component`.
+  `~/Library/Audio/Plug-Ins/VST3/WXRST.vst3` and `~/Library/Audio/Plug-Ins/Components/WXRST.component` (old "Denny Did It" bundles were deleted).
 - Artefacts: `build/ICEWATER_artefacts/Release/{VST3,AU,Standalone}/`. Standalone app is handy for quick visual checks
-  (`open "build/ICEWATER_artefacts/Release/Standalone/Denny Did It.app"`), then screenshot with `screencapture`.
+  (`open "build/ICEWATER_artefacts/Release/Standalone/WXRST.app"`), then screenshot with `screencapture`.
 - Universal binary (arm64 + x86_64) is required: FL Studio reported "plugin was installed incorrectly" with the
   earlier arm64-only build. Old `ICEWATER.vst3/.component` bundles were deleted. User must rescan in FL:
-  Options → Manage plugins → tick "Rescan previously verified plugins" → Start scan → find "Denny Did It" under D.
+  Options → Manage plugins → tick "Rescan previously verified plugins" → Start scan → find "WXRST" under W.
   **Whether this fixed the FL error is still unconfirmed by the user.** If not, check `~/Library/Application Support/Image-Line/` logs.
 - Scripted UI clicks via osascript hit Terminal instead of the plugin; verify UI with screenshots.
 
@@ -32,7 +32,7 @@ auval -v aumu Dndi Dnny          # AU validation, passes
   (universal VST3/AU/Standalone) on every push to `main`; artifacts download from the Actions tab. Pushing a `v*` tag
   also attaches zips to a GitHub Release.
 - CMakeLists is platform-aware: AU + COPY_PLUGIN_AFTER_BUILD only on APPLE; falls back to FetchContent for JUCE 8.0.10
-  if `./JUCE` is missing. Windows install = copy `Denny Did It.vst3` into `C:\Program Files\Common Files\VST3\`.
+  if `./JUCE` is missing. Windows install = copy `WXRST.vst3` into `C:\Program Files\Common Files\VST3\`.
 - Pushing workflow files needs the gh token to have the `workflow` scope: `gh auth refresh -h github.com -s workflow`.
 
 ## Source map (`Source/`, ~2,800 lines)
@@ -46,7 +46,7 @@ auval -v aumu Dndi Dnny          # AU validation, passes
 | `Chords.h` | `NoteEvent`, `Chord`, `Progression {chords, events, melodyEvents, bassEvents, totalBeats, title}`, `ChordGen` (keyNames, scaleNames, styleNames, barNames, rhythmNames, `Options{key,scale,style,bars,rhythm,strum,seed}`, `generate()`, `writeMidiFile()`, `chordListString()`). Scales: Minor, Major, Dorian, Harmonic Minor, Lydian, Phrygian. Styles: Drake/OVO, Lo-Fi, Dreamy, Sad, Uplifting, PS2 Menu, Dark Trap, Neo-Soul, Ambient. FEEL: Whole bars, Mixed, Pushed, Half bars. MIDI files written to `~/Documents/ICEWATER Chords/`. |
 | `PluginProcessor.h/.cpp` | `IcewaterProcessor`: `apvts`, `Engine engines[3]` (0 chords = main knobs, 1 melody, 2 808/bass with their own preset snapshots), `layerEnabled[3]`, `setLayerPreset/getLayerPreset` (applied on audio thread via `pendingLayerLoad`), progression playback synced to host BPM routing to `layerMidi[3]`, `loadPreset`, `randomiseSound` (DICE), programs API, state save/load (program, melodyPreset, bassPreset, layer0..2, anim flag), scope/meter atomics. |
 | `LookAndFeel.h` | `IceColours` = MUTABLE inline globals + `applyTheme(0 ICE / 1 MIDNIGHT)` (Midnight = violet #0b0614 bg, magenta #ff3fa4 accent, purple #8a2be2 deep, sunset gold #ffc46b glow); `IceLookAndFeel` (`refreshColours()` re-applies after a theme switch; `drawTabButton` for the header tab). |
-| `PluginEditor.h/.cpp` | `AnimatedBackground` (6 aurora blobs at 1/8 scale, 6 fps + ~90 header particles at 24 fps, ~4% of one core, toggled by "~" button, saved in state), `Knob`, `Panel`, `Scope`, `EnvDisplay`, `MidiDragPad` (kind 0/1/2, external file drag into FL), `DiceButton` (real die with pips, rolls a random face per click), `TabButton` ("MIDNIGHT" header tab), `IcewaterEditor` (DragAndDropContainer; `applyTheme()` swaps colours, refreshes label colours, `sendLookAndFeelChange`, re-renders background). Midnight background: magenta/violet/orange haze blobs, perspective grid scrolling below the header, striped sunset sun behind the logo, twinkling stars. Theme FOLLOWS THE PRESET (Denny's call): `syncThemeToPreset()` runs on every program change - Synthwave / 16-Bit category -> Midnight, anything else -> ICE. The MIDNIGHT tab is a manual override until the next preset change; turning it on jumps the category combo to Synthwave. Nothing theme-related is saved in state. Denny wants playable instruments only, no one-shot "hit" presets. Env `ICEWATER_THEME=0/1` overrides for screenshots. Window 980×852. Logo text "DENNYDIDIT", subtitle "LO-FI PADS / KEYS / 808s / CHORD ENGINE". |
+| `PluginEditor.h/.cpp` | `AnimatedBackground` (6 aurora blobs at 1/8 scale, 6 fps + ~90 header particles at 24 fps, ~4% of one core, toggled by "~" button, saved in state), `Knob`, `Panel`, `Scope`, `EnvDisplay`, `MidiDragPad` (kind 0/1/2, external file drag into FL), `DiceButton` (real die with pips, rolls a random face per click), `TabButton` ("MIDNIGHT" header tab), `IcewaterEditor` (DragAndDropContainer; `applyTheme()` swaps colours, refreshes label colours, `sendLookAndFeelChange`, re-renders background). Midnight background: magenta/violet/orange haze blobs, perspective grid scrolling below the header, striped sunset sun behind the logo, twinkling stars. Theme FOLLOWS THE PRESET (Denny's call): `syncThemeToPreset()` runs on every program change - Synthwave / 16-Bit category -> Midnight, anything else -> ICE. The MIDNIGHT tab is a manual override until the next preset change; turning it on jumps the category combo to Synthwave. Nothing theme-related is saved in state. Denny wants playable instruments only, no one-shot "hit" presets. Env `ICEWATER_THEME=0/1` overrides for screenshots. Window 980×852. Logo text "WXRST" (34pt), subtitle "THE WORST PLUGIN / ..." (differs per theme). |
 
 Editor layout: header (anim "~", category combo, </> , preset combo, dice icon, MIDNIGHT tab, scope) → panels OSC A, OSC B, FILTER,
 AMP ENV, FILTER ENV, LFO, PITCH/VOICE (Poly/Mono, P.ENV, DECAY, GLIDE), GLOBAL (SUB, NOISE, DRIFT, WIDTH, MASTER),
@@ -63,7 +63,7 @@ drag pad + sound picker; chords row shows "main sound (knobs above)").
   (that was the "dropdown snaps back to All" bug).
 - Animation: never let dirty-rect merging cause full-window repaints (was 16% CPU). Particles repaint header only.
 - Theme colours are global statics: the editor destructor resets to ICE so a second instance doesn't inherit Midnight.
-- `pkill -f "Denny Did It"` between standalone launches: `open` reuses a running instance, so env overrides don't apply.
+- `pkill -f WXRST` between standalone launches: `open` reuses a running instance, so env overrides don't apply.
 - Engine defaults come from the real processor's parameters, not a dummy AudioProcessor.
 - A plugin can't place MIDI onto an FL channel directly; the drag pads + in-plugin audition are the workaround.
 

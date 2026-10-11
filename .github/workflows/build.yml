@@ -25,25 +25,25 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item -Recurse "build/ICEWATER_artefacts/Release/VST3/Denny Did It.vst3" dist/
-          Copy-Item "build/ICEWATER_artefacts/Release/Standalone/Denny Did It.exe" dist/
+          Copy-Item -Recurse "build/ICEWATER_artefacts/Release/VST3/WXRST.vst3" dist/
+          Copy-Item "build/ICEWATER_artefacts/Release/Standalone/WXRST.exe" dist/
           @"
-          DENNY DID IT - Windows install
+          WXRST (THE WORST PLUGIN) - Windows install
 
           VST3 (for FL Studio):
-            Copy the folder "Denny Did It.vst3" into
+            Copy the folder "WXRST.vst3" into
             C:\Program Files\Common Files\VST3\
             then in FL Studio: Options > Manage plugins > Start scan.
-            It shows up as "Denny Did It" under Installed > Generators.
+            It shows up as "WXRST" under Installed > Generators.
 
           Standalone:
-            Run "Denny Did It.exe" anywhere. Generated chord MIDI files land in
+            Run "WXRST.exe" anywhere. Generated chord MIDI files land in
             Documents\ICEWATER Chords\
           "@ | Set-Content dist/README.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DennyDidIt-Windows
+          name: WXRST-Windows
           path: dist/
 
   macos:
@@ -63,15 +63,15 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist
-          cp -R "build/ICEWATER_artefacts/Release/VST3/Denny Did It.vst3" dist/
-          cp -R "build/ICEWATER_artefacts/Release/AU/Denny Did It.component" dist/
-          cp -R "build/ICEWATER_artefacts/Release/Standalone/Denny Did It.app" dist/
-          cd dist && zip -ry ../DennyDidIt-macOS.zip . && cd ..
+          cp -R "build/ICEWATER_artefacts/Release/VST3/WXRST.vst3" dist/
+          cp -R "build/ICEWATER_artefacts/Release/AU/WXRST.component" dist/
+          cp -R "build/ICEWATER_artefacts/Release/Standalone/WXRST.app" dist/
+          cd dist && zip -ry ../WXRST-macOS.zip . && cd ..
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DennyDidIt-macOS
-          path: DennyDidIt-macOS.zip
+          name: WXRST-macOS
+          path: WXRST-macOS.zip
 
   release:
     name: Attach to GitHub Release
@@ -85,9 +85,9 @@ jobs:
         with:
           path: artifacts
       - name: Zip Windows build
-        run: cd artifacts/DennyDidIt-Windows && zip -r ../../DennyDidIt-Windows.zip . && cd ../..
+        run: cd artifacts/WXRST-Windows && zip -r ../../WXRST-Windows.zip . && cd ../..
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            DennyDidIt-Windows.zip
-            artifacts/DennyDidIt-macOS/DennyDidIt-macOS.zip
+            WXRST-Windows.zip
+            artifacts/WXRST-macOS/WXRST-macOS.zip
