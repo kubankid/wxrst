@@ -28,7 +28,7 @@ auval -v aumu Dndi Dnny          # AU validation, passes
 
 ### Windows build (via GitHub Actions)
 
-- `.github/workflows/build.yml` builds Windows (VS 2022 x64, VST3 + Standalone .exe, static MSVC runtime) and macOS
+- `.github/workflows/build.yml` builds Windows (default Visual Studio generator on windows-latest, x64, VST3 + Standalone .exe, static MSVC runtime) and macOS
   (universal VST3/AU/Standalone) on every push to `main`; artifacts download from the Actions tab. Pushing a `v*` tag
   also attaches zips to a GitHub Release.
 - CMakeLists is platform-aware: AU + COPY_PLUGIN_AFTER_BUILD only on APPLE; falls back to FetchContent for JUCE 8.0.10
