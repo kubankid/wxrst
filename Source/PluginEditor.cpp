@@ -59,13 +59,19 @@ void AnimatedBackground::renderGlow()
 {
     if (! glow.isValid()) return;
     juce::Graphics g (glow);
-    g.fillAll (juce::Colour (0xff0a0d14));
+    g.fillAll (IceColours::bg);
     const float w = (float) glow.getWidth(), h = (float) glow.getHeight();
+    const bool midnight = IceColours::theme == 1;
+    // MIDNIGHT swaps the aurora for magenta / violet / sunset-orange haze
+    const juce::Colour nightCols[] = { juce::Colour (0xffff2fa0), juce::Colour (0xff7b2cff), juce::Colour (0xffff7a3c),
+                                       juce::Colour (0xffb400ff), juce::Colour (0xff3b1a8a) };
+    int i = 0;
     for (auto& b : blobs)
     {
         const float pulse = 0.34f + 0.12f * std::sin (t * 0.35f + b.phase);
         const float rad = b.r * w;
-        juce::ColourGradient grad (b.c.withAlpha (pulse), b.x * w, b.y * h, juce::Colours::transparentBlack, b.x * w + rad, b.y * h, true);
+        const auto c = midnight ? nightCols[i++ % 5] : b.c;
+        juce::ColourGradient grad (c.withAlpha (pulse * (midnight ? 0.8f : 1.f)), b.x * w, b.y * h, juce::Colours::transparentBlack, b.x * w + rad, b.y * h, true);
         g.setGradientFill (grad);
         g.fillEllipse (b.x * w - rad, b.y * h - rad, rad * 2.f, rad * 2.f);
     }
@@ -73,33 +79,118 @@ void AnimatedBackground::renderGlow()
 
 void AnimatedBackground::paint (juce::Graphics& g)
 {
+    const bool midnight = IceColours::theme == 1;
+    const float w = (float) getWidth(), h = (float) getHeight();
+
     g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
     g.drawImage (glow, getLocalBounds().toFloat());
 
-    // vignette so the edges stay dark
-    juce::ColourGradient vig (juce::Colours::transparentBlack, getWidth() * 0.5f, getHeight() * 0.5f,
-                              juce::Colour (0xff05070b).withAlpha (0.45f), 0.f, 0.f, true);
-    g.setGradientFill (vig);
-    g.fillAll();
-
-    // ice dust
-    const float w = (float) getWidth(), h = (float) getHeight();
-    for (auto& p : particles)
+    if (midnight)
     {
-        const float tw = 0.35f + 0.65f * (0.5f + 0.5f * std::sin (t * p.speed + p.phase));
-        g.setColour (IceColours::iceGlow.withAlpha (0.2f + 0.6f * tw));
-        g.fillEllipse (p.x * w, p.y * h, p.size, p.size);
+        // --- synthwave: perspective grid scrolling toward you, below the header ---
+        const float horizon = 82.f;
+        const float vx = w * 0.5f;
+        g.setColour (juce::Colour (0xffff2fa0).withAlpha (0.10f));
+        for (int i = -9; i <= 9; ++i)
+        {
+            const float xBottom = vx + (float) i * w * 0.16f;
+            g.drawLine (vx, horizon, xBottom, h, 1.f);
+        }
+        const float scroll = std::fmod (t * 0.25f, 1.f);
+        for (int i = 0; i < 12; ++i)
+        {
+            const float u = std::fmod ((float) i / 12.f + scroll, 1.f);
+            const float y = horizon + (h - horizon) * u * u;
+            g.setColour (juce::Colour (0xffff2fa0).withAlpha (0.04f + 0.14f * u));
+            g.drawLine (0.f, y, w, y, 1.f);
+        }
+        // --- sunset sun behind the logo, with the classic horizontal cuts ---
+        const float sr = 54.f, sx = 150.f, sy = 70.f;
+        juce::ColourGradient sun (juce::Colour (0xffffd36b), sx, sy - sr, juce::Colour (0xffff2fa0), sx, sy + sr * 0.4f, false);
+        g.setGradientFill (sun);
+        g.fillEllipse (sx - sr, sy - sr, sr * 2.f, sr * 2.f);
+        g.setColour (IceColours::bg);
+        for (int i = 0; i < 6; ++i)
+        {
+            const float yy = sy - 4.f + (float) i * 7.f;
+            g.fillRect (sx - sr - 1.f, yy, sr * 2.f + 2.f, 1.5f + (float) i * 0.6f);
+        }
+        g.setColour (IceColours::bg.withAlpha (0.0f));
+        // stars (particles become fixed twinkling stars)
+        for (auto& p : particles)
+        {
+            const float tw = 0.5f + 0.5f * std::sin (t * p.speed * 2.f + p.phase);
+            g.setColour (juce::Colours::white.withAlpha (0.15f + 0.6f * tw));
+            g.fillEllipse (p.x * w, p.phase / 6.3f * 78.f, p.size * 0.7f, p.size * 0.7f);
+        }
+    }
+    else
+    {
+        // vignette so the edges stay dark
+        juce::ColourGradient vig (juce::Colours::transparentBlack, w * 0.5f, h * 0.5f,
+                                  juce::Colour (0xff05070b).withAlpha (0.45f), 0.f, 0.f, true);
+        g.setGradientFill (vig);
+        g.fillAll();
+
+        // ice dust
+        for (auto& p : particles)
+        {
+            const float tw = 0.35f + 0.65f * (0.5f + 0.5f * std::sin (t * p.speed + p.phase));
+            g.setColour (IceColours::iceGlow.withAlpha (0.2f + 0.6f * tw));
+            g.fillEllipse (p.x * w, p.y * h, p.size, p.size);
+        }
     }
 
-    // logo with a slow shimmer
+    // logo with a slow shimmer (chrome-pink in MIDNIGHT)
     g.setFont (juce::Font (juce::FontOptions (30.f, juce::Font::bold)));
     const float sh = 0.5f + 0.5f * std::sin (t * 0.6f);
-    juce::ColourGradient logo (IceColours::iceGlow, 20.f + sh * 60.f, 10.f, IceColours::iceDeep, 260.f + sh * 60.f, 60.f, false);
+    juce::ColourGradient logo (midnight ? juce::Colour (0xffffe08a) : IceColours::iceGlow, 20.f + sh * 60.f, 10.f,
+                               midnight ? juce::Colour (0xffff2fa0) : IceColours::iceDeep, 260.f + sh * 60.f, 60.f, false);
+    if (midnight)
+    {
+        // dark halo so the chrome lettering stays readable over the sun
+        g.setColour (IceColours::bg.withAlpha (0.75f));
+        for (auto off : { juce::Point<int> (2, 2), juce::Point<int> (-1, 1), juce::Point<int> (1, -1), juce::Point<int> (0, 3) })
+            g.drawText ("DENNYDIDIT", 22 + off.x, 10 + off.y, 300, 40, juce::Justification::centredLeft);
+    }
     g.setGradientFill (logo);
     g.drawText ("DENNYDIDIT", 22, 10, 300, 40, juce::Justification::centredLeft);
     g.setColour (IceColours::dimText);
     g.setFont (juce::Font (juce::FontOptions (10.f)));
-    g.drawText ("LO-FI PADS  /  KEYS  /  808s  /  CHORD ENGINE", 24, 48, 300, 14, juce::Justification::centredLeft);
+    g.drawText (midnight ? "MIDNIGHT MODE  /  SYNTHWAVE  /  CS-80  /  16-BIT" : "LO-FI PADS  /  KEYS  /  808s  /  CHORD ENGINE",
+                24, 48, 300, 14, juce::Justification::centredLeft);
+}
+
+// ---------------------------------------------------------------------------
+void DiceButton::paintButton (juce::Graphics& g, bool over, bool down)
+{
+    using namespace IceColours;
+    auto r = getLocalBounds().toFloat().reduced (2.f);
+    const float sz = juce::jmin (r.getWidth(), r.getHeight());
+    auto cube = r.withSizeKeepingCentre (sz, sz);
+    if (down) cube = cube.reduced (1.5f);
+
+    if (over) { g.setColour (ice.withAlpha (0.25f)); g.fillRoundedRectangle (cube.expanded (3.f), 8.f); }
+    juce::ColourGradient body (iceGlow, cube.getX(), cube.getY(), iceDeep, cube.getRight(), cube.getBottom(), false);
+    g.setGradientFill (body);
+    g.fillRoundedRectangle (cube, sz * 0.22f);
+    g.setColour (juce::Colours::white.withAlpha (0.35f));
+    g.drawRoundedRectangle (cube.reduced (0.5f), sz * 0.22f, 1.f);
+
+    // pips
+    const float c = sz * 0.5f, o = sz * 0.26f, pr = sz * 0.085f;
+    const float cx = cube.getX() + c, cy = cube.getY() + c;
+    auto pip = [&] (float dx, float dy) { g.fillEllipse (cx + dx - pr, cy + dy - pr, pr * 2.f, pr * 2.f); };
+    g.setColour (juce::Colour (0xff0a0d14));
+    switch (face)
+    {
+        case 1: pip (0, 0); break;
+        case 2: pip (-o, -o); pip (o, o); break;
+        case 3: pip (-o, -o); pip (0, 0); pip (o, o); break;
+        case 4: pip (-o, -o); pip (o, -o); pip (-o, o); pip (o, o); break;
+        case 5: pip (-o, -o); pip (o, -o); pip (0, 0); pip (-o, o); pip (o, o); break;
+        default: pip (-o, -o); pip (o, -o); pip (-o, 0); pip (o, 0); pip (-o, o); pip (o, o); break;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +237,7 @@ void Panel::paint (juce::Graphics& g)
 void Scope::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff070a10));
+    g.setColour (screen);
     g.fillRoundedRectangle (r, 6.f);
     g.setColour (panelEdge);
     g.drawRoundedRectangle (r.reduced (0.5f), 6.f, 1.f);
@@ -184,7 +275,7 @@ void Scope::paint (juce::Graphics& g)
 void EnvDisplay::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat().reduced (4.f, 3.f);
-    g.setColour (juce::Colour (0xff070a10));
+    g.setColour (screen);
     g.fillRoundedRectangle (r, 4.f);
 
     // time axis: attack + decay + fixed sustain hold + release, log-ish scaled
@@ -216,7 +307,7 @@ void MidiDragPad::paint (juce::Graphics& g)
     auto prog = proc.getProgression();
     const bool has = prog != nullptr && file.existsAsFile();
 
-    g.setColour (juce::Colour (0xff070a10));
+    g.setColour (screen);
     g.fillRoundedRectangle (r, 6.f);
     g.setColour (has ? ice.withAlpha (0.6f) : panelEdge);
     g.drawRoundedRectangle (r.reduced (0.5f), 6.f, 1.f);
@@ -387,8 +478,22 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
     prevBtn.onClick = [step] { step (-1); };
     nextBtn.onClick = [step] { step (1); };
     diceBtn.onClick = [this] { proc.randomiseSound(); };
-    diceBtn.setTooltip ("Randomise the sound");
+    diceBtn.setTooltip ("Roll the dice: randomise the sound");
     addAndMakeVisible (categoryBox); addAndMakeVisible (presetBox); addAndMakeVisible (prevBtn); addAndMakeVisible (nextBtn); addAndMakeVisible (diceBtn);
+
+    // MIDNIGHT MODE tab: 80s synthwave skin, saved with the plugin state
+    const int savedTheme = juce::SystemStats::getEnvironmentVariable ("ICEWATER_THEME", "").isNotEmpty()
+                         ? juce::SystemStats::getEnvironmentVariable ("ICEWATER_THEME", "0").getIntValue()
+                         : (int) proc.apvts.state.getProperty ("theme", 0);
+    midnightTab.setTooltip ("Midnight Mode: 80s synthwave look");
+    midnightTab.onClick = [this]
+    {
+        applyTheme (midnightTab.getToggleState() ? 1 : 0);
+        proc.apvts.state.setProperty ("theme", midnightTab.getToggleState() ? 1 : 0, nullptr);
+    };
+    addAndMakeVisible (midnightTab);
+    midnightTab.setToggleState (savedTheme == 1, juce::dontSendNotification);
+    applyTheme (savedTheme);
 
     // Chord generator
     auto setupChordCombo = [&] (juce::ComboBox& box, juce::Label& lbl, const juce::StringArray& items, int def)
@@ -472,7 +577,23 @@ void IcewaterEditor::generateChords()
     proc.setProgression (prog);
 }
 
-IcewaterEditor::~IcewaterEditor() { setLookAndFeel (nullptr); }
+IcewaterEditor::~IcewaterEditor()
+{
+    setLookAndFeel (nullptr);
+    IceColours::applyTheme (0); // the LookAndFeel colours are global: leave them in the default state
+}
+
+void IcewaterEditor::applyTheme (int which)
+{
+    IceColours::applyTheme (which);
+    lnf.refreshColours();
+    for (auto* k : knobs) k->label.setColour (juce::Label::textColourId, IceColours::dimText);
+    for (auto* l : { &keyLbl, &scaleLbl, &styleLbl, &barsLbl, &rhythmLbl, &chordSoundLbl })
+        l->setColour (juce::Label::textColourId, IceColours::dimText);
+    sendLookAndFeelChange();
+    background.themeChanged();
+    repaint();
+}
 
 void IcewaterEditor::setupCombo (juce::ComboBox& box, const juce::StringArray& items, const char* id,
                                  std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>& att, Panel& parent)
@@ -551,10 +672,11 @@ void IcewaterEditor::resized()
     animBtn.setBounds (216, 24, 24, 24);
     categoryBox.setBounds (250, 22, 86, 28);
     prevBtn.setBounds (342, 22, 26, 28);
-    presetBox.setBounds (372, 22, 200, 28);
-    nextBtn.setBounds (576, 22, 26, 28);
-    diceBtn.setBounds (612, 22, 56, 28);
-    scope.setBounds (690, 12, 274, 52);
+    presetBox.setBounds (372, 22, 186, 28);
+    nextBtn.setBounds (562, 22, 26, 28);
+    diceBtn.setBounds (596, 20, 32, 32);
+    midnightTab.setBounds (638, 22, 84, 28);
+    scope.setBounds (734, 12, 230, 52);
 
     // Row 1
     oscA.setBounds (16, 82, 300, 215);

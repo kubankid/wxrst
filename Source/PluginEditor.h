@@ -12,6 +12,7 @@ public:
     void resized() override;
     void setAnimating (bool on) { animating = on; if (on) startTimerHz (24); else stopTimer(); repaint(); }
     bool isAnimating() const { return animating; }
+    void themeChanged() { renderGlow(); repaint(); }
     // Only the areas not covered by panels get repainted each frame
     void setExclusions (const std::vector<juce::Rectangle<int>>& panels)
     {
@@ -30,6 +31,28 @@ private:
     float t = 0.f;
     int frame = 0;
     bool animating = true;
+};
+
+// A real dice: rounded cube with pips. Rolls a new face every click.
+class DiceButton : public juce::Button
+{
+public:
+    DiceButton() : juce::Button ("DICE") {}
+    void paintButton (juce::Graphics& g, bool over, bool down) override;
+    void clicked() override { face = 1 + juce::Random::getSystemRandom().nextInt (6); repaint(); }
+private:
+    int face = 5;
+};
+
+// Header tab (ICE / MIDNIGHT theme switch)
+class TabButton : public juce::Button
+{
+public:
+    TabButton (const juce::String& name) : juce::Button (name) { setClickingTogglesState (true); }
+    void paintButton (juce::Graphics& g, bool over, bool) override
+    {
+        if (auto* l = dynamic_cast<IceLookAndFeel*> (&getLookAndFeel())) l->drawTabButton (g, *this, over);
+    }
 };
 
 // Rotary knob with label underneath and value readout on hover
@@ -132,7 +155,10 @@ private:
     void rebuildPresetList();
     std::vector<int> visiblePresets; // indices into getPresets() for the current category
     juce::ToggleButton oscAOn { "ON" }, oscBOn { "ON" };
-    juce::TextButton prevBtn { "<" }, nextBtn { ">" }, diceBtn { "DICE" };
+    juce::TextButton prevBtn { "<" }, nextBtn { ">" };
+    DiceButton diceBtn;
+    TabButton midnightTab { "MIDNIGHT" };
+    void applyTheme (int which);
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oscAWaveAtt, oscBWaveAtt, lfoShapeAtt, filtTypeAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> oscAOnAtt, oscBOnAtt;
     Scope scope { proc };

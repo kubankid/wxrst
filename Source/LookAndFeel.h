@@ -1,24 +1,63 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 
+// Theme colours. These are mutable so the whole UI can flip between ICE (navy/cyan) and MIDNIGHT (80s synthwave).
 namespace IceColours
 {
-    const juce::Colour bg        { 0xff0a0d14 };
-    const juce::Colour panel     { 0xff121724 };
-    const juce::Colour panelEdge { 0xff1f2838 };
-    const juce::Colour text      { 0xffc9d6e6 };
-    const juce::Colour dimText   { 0xff6b7a90 };
-    const juce::Colour ice       { 0xff6fe3ff };
-    const juce::Colour iceDeep   { 0xff2b8cff };
-    const juce::Colour iceGlow   { 0xffb7f4ff };
-    const juce::Colour knobBody  { 0xff1a2130 };
-    const juce::Colour knobRing  { 0xff262f42 };
+    inline juce::Colour bg        { 0xff0a0d14 };
+    inline juce::Colour panel     { 0xff121724 };
+    inline juce::Colour panelEdge { 0xff1f2838 };
+    inline juce::Colour text      { 0xffc9d6e6 };
+    inline juce::Colour dimText   { 0xff6b7a90 };
+    inline juce::Colour ice       { 0xff6fe3ff };
+    inline juce::Colour iceDeep   { 0xff2b8cff };
+    inline juce::Colour iceGlow   { 0xffb7f4ff };
+    inline juce::Colour knobBody  { 0xff1a2130 };
+    inline juce::Colour knobRing  { 0xff262f42 };
+    inline juce::Colour screen    { 0xff070a10 };   // scope / env / drag pad backgrounds
+    inline int          theme     = 0;             // 0 = ICE, 1 = MIDNIGHT
+
+    inline void applyTheme (int which)
+    {
+        theme = which;
+        if (which == 1)
+        {
+            // MIDNIGHT: deep violet night, hot magenta accents, sunset glow
+            bg        = juce::Colour (0xff0b0614);
+            panel     = juce::Colour (0xff150c24);
+            panelEdge = juce::Colour (0xff3a1d5c);
+            text      = juce::Colour (0xfff3dcff);
+            dimText   = juce::Colour (0xff9a78b8);
+            ice       = juce::Colour (0xffff3fa4);
+            iceDeep   = juce::Colour (0xff8a2be2);
+            iceGlow   = juce::Colour (0xffffc46b);
+            knobBody  = juce::Colour (0xff1e1030);
+            knobRing  = juce::Colour (0xff2e1a48);
+            screen    = juce::Colour (0xff0a0512);
+        }
+        else
+        {
+            bg        = juce::Colour (0xff0a0d14);
+            panel     = juce::Colour (0xff121724);
+            panelEdge = juce::Colour (0xff1f2838);
+            text      = juce::Colour (0xffc9d6e6);
+            dimText   = juce::Colour (0xff6b7a90);
+            ice       = juce::Colour (0xff6fe3ff);
+            iceDeep   = juce::Colour (0xff2b8cff);
+            iceGlow   = juce::Colour (0xffb7f4ff);
+            knobBody  = juce::Colour (0xff1a2130);
+            knobRing  = juce::Colour (0xff262f42);
+            screen    = juce::Colour (0xff070a10);
+        }
+    }
 }
 
 class IceLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    IceLookAndFeel()
+    IceLookAndFeel() { refreshColours(); }
+
+    void refreshColours()
     {
         using namespace IceColours;
         setColour (juce::ResizableWindow::backgroundColourId, bg);
@@ -140,6 +179,22 @@ public:
         g.setColour (over ? text.brighter() : text);
         g.setFont (juce::Font (juce::FontOptions (12.f, juce::Font::bold)));
         g.drawText (b.getButtonText(), r.toNearestInt(), juce::Justification::centredLeft);
+    }
+
+    // Draws a toggle button as a flat "tab" with an underline when active
+    void drawTabButton (juce::Graphics& g, juce::Button& b, bool over)
+    {
+        using namespace IceColours;
+        auto r = b.getLocalBounds().toFloat();
+        const bool on = b.getToggleState();
+        g.setColour (on ? ice.withAlpha (0.14f) : (over ? knobBody.brighter (0.1f) : knobBody));
+        g.fillRoundedRectangle (r.reduced (0.5f), 5.f);
+        g.setColour (on ? ice : panelEdge);
+        g.drawRoundedRectangle (r.reduced (0.5f), 5.f, 1.f);
+        if (on) { g.setColour (ice); g.fillRoundedRectangle (r.getX() + 8.f, r.getBottom() - 4.f, r.getWidth() - 16.f, 2.f, 1.f); }
+        g.setColour (on ? iceGlow : text);
+        g.setFont (juce::Font (juce::FontOptions (11.f, juce::Font::bold)));
+        g.drawText (b.getButtonText(), r.toNearestInt(), juce::Justification::centred);
     }
 
     void drawPopupMenuBackground (juce::Graphics& g, int w, int h) override
