@@ -2,7 +2,7 @@
 
 Lo-fi / PS2-era / Drake-OVO pad, keys, 808 and bass synth with a built-in chord + melody + 808
 MIDI generator. Written entirely with Claude Code for Denny (music producer, FL Studio 2025,
-Apple M5 Max, macOS 27.2). Not a git repo. No tests. Last session: 2026-10-11.
+Apple M5 Max, macOS 27.2). Git repo since 2026-10-11, private remote https://github.com/kubankid/denny-did-it (JUCE is a git submodule). No tests. Last session: 2026-10-11.
 
 ## Build & install
 
@@ -25,6 +25,15 @@ auval -v aumu Dndi Dnny          # AU validation, passes
   Options → Manage plugins → tick "Rescan previously verified plugins" → Start scan → find "Denny Did It" under D.
   **Whether this fixed the FL error is still unconfirmed by the user.** If not, check `~/Library/Application Support/Image-Line/` logs.
 - Scripted UI clicks via osascript hit Terminal instead of the plugin; verify UI with screenshots.
+
+### Windows build (via GitHub Actions)
+
+- `.github/workflows/build.yml` builds Windows (VS 2022 x64, VST3 + Standalone .exe, static MSVC runtime) and macOS
+  (universal VST3/AU/Standalone) on every push to `main`; artifacts download from the Actions tab. Pushing a `v*` tag
+  also attaches zips to a GitHub Release.
+- CMakeLists is platform-aware: AU + COPY_PLUGIN_AFTER_BUILD only on APPLE; falls back to FetchContent for JUCE 8.0.10
+  if `./JUCE` is missing. Windows install = copy `Denny Did It.vst3` into `C:\Program Files\Common Files\VST3\`.
+- Pushing workflow files needs the gh token to have the `workflow` scope: `gh auth refresh -h github.com -s workflow`.
 
 ## Source map (`Source/`, ~2,800 lines)
 
