@@ -36,7 +36,7 @@ endif()
 juce_add_plugin(ICEWATER
     COMPANY_NAME "DennyAudio"
     PLUGIN_MANUFACTURER_CODE Dnny
-    PLUGIN_CODE Dndi
+    PLUGIN_CODE Wxrs
     FORMATS ${DENNY_FORMATS}
     PRODUCT_NAME "WXRST"
     IS_SYNTH TRUE

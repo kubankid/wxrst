@@ -10,11 +10,11 @@ Apple M5 Max, macOS 27.2). Git repo since 2026-10-11, private remote https://git
 cd /Users/denny/Documents/VST1
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 cmake --build build --config Release -j12
-auval -v aumu Dndi Dnny          # AU validation, passes
+auval -v aumu Wxrs Dnny          # AU validation, passes
 ```
 
 - JUCE 8.0.10 lives in `./JUCE` (subdirectory, not a submodule). CMake 4.4.3, Apple clang, C++17.
-- CMake target is still `ICEWATER` (original name). PRODUCT_NAME "WXRST" (renamed from "Denny Did It" on 2026-10-11 at Denny's request; PLUGIN_CODE unchanged), PLUGIN_CODE `Dndi`,
+- CMake target is still `ICEWATER` (original name). PRODUCT_NAME "WXRST" (renamed from "Denny Did It" on 2026-10-11 at Denny's request; PLUGIN_CODE changed to `Wxrs` so it coexists with old "Denny Did It" installs on Windows),
   manufacturer `Dnny`, company DennyAudio, bundle id com.DennyAudio.ICEWATER.
 - Formats: VST3, AU, Standalone. COPY_PLUGIN_AFTER_BUILD installs to
   `~/Library/Audio/Plug-Ins/VST3/WXRST.vst3` and `~/Library/Audio/Plug-Ins/Components/WXRST.component` (old "Denny Did It" bundles were deleted).
