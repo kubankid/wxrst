@@ -6,6 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
 
+# Windows: static MSVC runtime for ALL targets (incl. JUCE plugin-client objects) so the
+# VST3/EXE run without the VC++ redistributable. Must be set before add_subdirectory(JUCE).
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 # JUCE: use the bundled ./JUCE checkout (git submodule) if present, otherwise fetch it.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/JUCE/CMakeLists.txt")
     add_subdirectory(JUCE)
@@ -43,8 +49,6 @@ juce_add_plugin(ICEWATER
     AU_MAIN_TYPE kAudioUnitType_MusicDevice)
 
 if(MSVC)
-    # Static runtime so the VST3/EXE run on machines without the VC++ redistributable.
-    set_property(TARGET ICEWATER PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     target_compile_options(ICEWATER PUBLIC /utf-8 /bigobj)
 endif()
 
