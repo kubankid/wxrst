@@ -484,12 +484,19 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
     // MIDNIGHT MODE tab: 80s synthwave skin, saved with the plugin state
     const int savedTheme = juce::SystemStats::getEnvironmentVariable ("ICEWATER_THEME", "").isNotEmpty()
                          ? juce::SystemStats::getEnvironmentVariable ("ICEWATER_THEME", "0").getIntValue()
-                         : (int) proc.apvts.state.getProperty ("theme", 0);
+                         : (int) proc.apvts.state.getProperty ("theme", 1); // Midnight by default
     midnightTab.setTooltip ("Midnight Mode: 80s synthwave look");
     midnightTab.onClick = [this]
     {
-        applyTheme (midnightTab.getToggleState() ? 1 : 0);
-        proc.apvts.state.setProperty ("theme", midnightTab.getToggleState() ? 1 : 0, nullptr);
+        const bool on = midnightTab.getToggleState();
+        applyTheme (on ? 1 : 0);
+        proc.apvts.state.setProperty ("theme", on ? 1 : 0, nullptr);
+        // flipping Midnight on jumps the browser to the Synthwave sounds
+        if (on)
+        {
+            const int idx = presetCategories.indexOf ("Synthwave");
+            if (idx >= 0 && categoryBox.getSelectedId() != idx + 1) categoryBox.setSelectedId (idx + 1, juce::sendNotificationSync);
+        }
     };
     addAndMakeVisible (midnightTab);
     midnightTab.setToggleState (savedTheme == 1, juce::dontSendNotification);

@@ -1117,17 +1117,6 @@ inline const std::vector<Preset>& getPresets()
             { crushBits, 16 }, { crushRate, 48000 }, { lofiTone, 7000 }, { wow, 0.f }, { heat, 0.55f }, { dist, 0.2f }, { crackle, 0.f },
             { chorusMix, 0.f }, { delayMix, 0.15f }, { delayTime, 0.1875f }, { delayFb, 0.3f }, { verbMix, 0.1f }, { verbSize, 0.6f }, { width, 0.3f }, { master, -5.f } } },
 
-        { "Steel Clang Hit", "Synthwave", {
-            { oscAWave, 5 }, { oscAOct, 0 }, { oscASemi, 6 }, { oscAUnison, 3 }, { oscADetune, 40 }, { oscALevel, 0.7f },
-            { oscBWave, 1 }, { oscBOct, 1 }, { oscBSemi, 1 }, { oscBLevel, 0.5f },
-            { subLevel, 0.f }, { noiseLevel, 0.35f }, { drift, 0.1f },
-            { pitchEnvAmt, 5.f }, { pitchEnvDec, 0.03f },
-            { filtType, 2 }, { filtCutoff, 2600 }, { filtRes, 0.75f }, { filtEnv, 0.6f }, { filtKey, 0.3f }, { filtDrive, 0.6f },
-            { ampA, 0.001f }, { ampD, 1.2f }, { ampS, 0.f }, { ampR, 0.8f }, { fA, 0.001f }, { fD, 0.5f }, { fS, 0.f }, { fR, 0.4f },
-            { lfoPitch, 0.f }, { lfoFilter, 0.f },
-            { crushBits, 12 }, { crushRate, 32000 }, { lofiTone, 12000 }, { wow, 0.f }, { heat, 0.6f }, { dist, 0.35f }, { crackle, 0.f },
-            { chorusMix, 0.2f }, { delayMix, 0.25f }, { delayTime, 0.375f }, { delayFb, 0.4f }, { verbMix, 0.45f }, { verbSize, 0.9f }, { verbDamp, 0.2f }, { width, 1.f }, { master, -7.f } } },
-
         { "Future War Pad", "Synthwave", {
             { oscAWave, 0 }, { oscAUnison, 5 }, { oscADetune, 24 }, { oscALevel, 0.65f },
             { oscBWave, 0 }, { oscBOct, -1 }, { oscBUnison, 3 }, { oscBDetune, 12 }, { oscBLevel, 0.45f },
@@ -1364,16 +1353,6 @@ inline const std::vector<Preset>& getPresets()
             { crushBits, 12 }, { crushRate, 32000 }, { lofiTone, 7000 }, { wow, 0.f }, { heat, 0.55f }, { dist, 0.25f }, { crackle, 0.f },
             { chorusMix, 0.f }, { delayMix, 0.1f }, { delayTime, 0.1875f }, { delayFb, 0.25f }, { verbMix, 0.05f }, { width, 0.3f }, { master, -5.f } } },
 
-        { "X Boss Intro Hit", "16-Bit", {
-            { oscAWave, 0 }, { oscAUnison, 5 }, { oscADetune, 30 }, { oscALevel, 0.75f },
-            { oscBWave, 1 }, { oscBOct, -1 }, { oscBLevel, 0.5f }, { subLevel, 0.3f }, { noiseLevel, 0.15f }, { drift, 0.2f },
-            { pitchEnvAmt, 3.f }, { pitchEnvDec, 0.05f },
-            { filtType, 0 }, { filtCutoff, 2000 }, { filtRes, 0.3f }, { filtEnv, 0.7f }, { filtKey, 0.3f }, { filtDrive, 0.6f },
-            { ampA, 0.001f }, { ampD, 1.5f }, { ampS, 0.f }, { ampR, 1.f }, { fA, 0.001f }, { fD, 0.6f }, { fS, 0.f }, { fR, 0.5f },
-            { lfoPitch, 0.f }, { lfoFilter, 0.f },
-            { crushBits, 11 }, { crushRate, 32000 }, { lofiTone, 8000 }, { wow, 0.f }, { heat, 0.7f }, { dist, 0.5f }, { crackle, 0.f },
-            { chorusMix, 0.2f }, { delayMix, 0.2f }, { delayTime, 0.375f }, { delayFb, 0.35f }, { verbMix, 0.5f }, { verbSize, 0.9f }, { verbDamp, 0.3f }, { width, 1.f }, { master, -7.f } } },
-
         { "X Highway Arp Pluck", "16-Bit", {
             { oscAWave, 1 }, { oscAUnison, 1 }, { oscALevel, 0.75f },
             { oscBWave, 4 }, { oscBOct, 1 }, { oscBLevel, 0.3f }, { subLevel, 0.1f }, { noiseLevel, 0.f }, { drift, 0.05f },
@@ -1392,6 +1371,106 @@ inline const std::vector<Preset>& getPresets()
             { lfoShape, 0 }, { lfoRate, 5.5f }, { lfoPitch, 0.045f }, { lfoFilter, 0.f },
             { crushBits, 12 }, { crushRate, 32000 }, { lofiTone, 8500 }, { wow, 0.f }, { heat, 0.6f }, { dist, 0.35f }, { crackle, 0.f },
             { chorusMix, 0.3f }, { delayMix, 0.3f }, { delayTime, 0.375f }, { delayFb, 0.4f }, { verbMix, 0.35f }, { verbSize, 0.8f }, { width, 0.8f }, { master, -6.f } } },
+
+        // ---- more famous 80s synth sounds ----
+        { "BR Blade Runner Blues", "Synthwave", {
+            { oscAWave, 0 }, { oscAUnison, 2 }, { oscADetune, 6 }, { oscALevel, 0.7f },
+            { oscBWave, 4 }, { oscBOct, 0 }, { oscBFine, -8 }, { oscBLevel, 0.55f },
+            { subLevel, 0.1f }, { noiseLevel, 0.02f }, { drift, 0.35f },
+            { voiceMode, 1 }, { glide, 0.18f },
+            { filtType, 0 }, { filtCutoff, 1000 }, { filtRes, 0.35f }, { filtEnv, 0.55f }, { filtKey, 0.4f }, { filtDrive, 0.35f },
+            { ampA, 0.15f }, { ampD, 1.5f }, { ampS, 0.9f }, { ampR, 1.2f }, { fA, 0.4f }, { fD, 1.5f }, { fS, 0.45f }, { fR, 1.f },
+            { lfoShape, 0 }, { lfoRate, 5.f }, { lfoPitch, 0.05f }, { lfoFilter, 0.1f },
+            { crushBits, 16 }, { crushRate, 48000 }, { lofiTone, 8500 }, { wow, 0.06f }, { heat, 0.45f }, { crackle, 0.f },
+            { chorusMix, 0.25f }, { delayMix, 0.4f }, { delayTime, 0.75f }, { delayFb, 0.5f }, { verbMix, 0.65f }, { verbSize, 0.97f }, { verbDamp, 0.3f }, { width, 0.8f }, { master, -6.f } } },
+
+        { "BR End Titles Pulse", "Synthwave", {
+            { oscAWave, 1 }, { oscAOct, -1 }, { oscAUnison, 1 }, { oscALevel, 0.75f },
+            { oscBWave, 0 }, { oscBOct, 0 }, { oscBFine, 6 }, { oscBLevel, 0.45f }, { subLevel, 0.3f }, { noiseLevel, 0.f }, { drift, 0.2f },
+            { voiceMode, 1 }, { glide, 0.f },
+            { filtType, 1 }, { filtCutoff, 650 }, { filtRes, 0.4f }, { filtEnv, 0.85f }, { filtKey, 0.3f }, { filtDrive, 0.4f },
+            { ampA, 0.002f }, { ampD, 0.3f }, { ampS, 0.35f }, { ampR, 0.12f }, { fA, 0.002f }, { fD, 0.16f }, { fS, 0.08f }, { fR, 0.1f },
+            { lfoPitch, 0.f }, { lfoFilter, 0.f },
+            { crushBits, 16 }, { crushRate, 48000 }, { lofiTone, 8000 }, { wow, 0.f }, { heat, 0.5f }, { dist, 0.1f }, { crackle, 0.f },
+            { chorusMix, 0.15f }, { delayMix, 0.3f }, { delayTime, 0.375f }, { delayFb, 0.5f }, { verbMix, 0.25f }, { verbSize, 0.85f }, { width, 0.7f }, { master, -5.f } } },
+
+        { "T Main Theme Lead", "Synthwave", {
+            { oscAWave, 5 }, { oscAUnison, 2 }, { oscADetune, 12 }, { oscALevel, 0.65f },
+            { oscBWave, 1 }, { oscBOct, 0 }, { oscBFine, 7 }, { oscBLevel, 0.55f },
+            { subLevel, 0.15f }, { noiseLevel, 0.03f }, { drift, 0.25f },
+            { voiceMode, 1 }, { glide, 0.06f },
+            { filtType, 2 }, { filtCutoff, 1800 }, { filtRes, 0.55f }, { filtEnv, 0.5f }, { filtKey, 0.4f }, { filtDrive, 0.55f },
+            { ampA, 0.01f }, { ampD, 1.2f }, { ampS, 0.8f }, { ampR, 0.6f }, { fA, 0.01f }, { fD, 0.6f }, { fS, 0.35f }, { fR, 0.4f },
+            { lfoShape, 0 }, { lfoRate, 4.5f }, { lfoPitch, 0.02f }, { lfoFilter, 0.f },
+            { crushBits, 13 }, { crushRate, 40000 }, { lofiTone, 10000 }, { wow, 0.04f }, { heat, 0.6f }, { dist, 0.25f }, { crackle, 0.f },
+            { chorusMix, 0.25f }, { delayMix, 0.3f }, { delayTime, 0.5f }, { delayFb, 0.45f }, { verbMix, 0.45f }, { verbSize, 0.9f }, { verbDamp, 0.25f }, { width, 0.9f }, { master, -6.f } } },
+
+        { "T Tech Noir Sequence", "Synthwave", {
+            { oscAWave, 0 }, { oscAOct, -1 }, { oscAUnison, 1 }, { oscALevel, 0.8f },
+            { oscBWave, 4 }, { oscBOct, -1 }, { oscBFine, 9 }, { oscBLevel, 0.5f }, { subLevel, 0.35f }, { noiseLevel, 0.f }, { drift, 0.25f },
+            { voiceMode, 1 }, { glide, 0.f },
+            { filtType, 1 }, { filtCutoff, 450 }, { filtRes, 0.5f }, { filtEnv, 0.9f }, { filtKey, 0.3f }, { filtDrive, 0.55f },
+            { ampA, 0.002f }, { ampD, 0.28f }, { ampS, 0.25f }, { ampR, 0.1f }, { fA, 0.002f }, { fD, 0.14f }, { fS, 0.05f }, { fR, 0.08f },
+            { lfoPitch, 0.f }, { lfoFilter, 0.f },
+            { crushBits, 14 }, { crushRate, 44100 }, { lofiTone, 7000 }, { wow, 0.f }, { heat, 0.6f }, { dist, 0.25f }, { crackle, 0.f },
+            { chorusMix, 0.f }, { delayMix, 0.35f }, { delayTime, 0.1875f }, { delayFb, 0.45f }, { verbMix, 0.15f }, { verbSize, 0.7f }, { width, 0.5f }, { master, -5.f } } },
+
+        { "Africa Kalimba", "Synthwave", {
+            { oscAWave, 5 }, { oscAOct, 1 }, { oscAUnison, 1 }, { oscALevel, 0.75f },
+            { oscBWave, 3 }, { oscBOct, 1 }, { oscBLevel, 0.4f }, { subLevel, 0.f }, { noiseLevel, 0.f }, { drift, 0.05f },
+            { filtType, 0 }, { filtCutoff, 5000 }, { filtRes, 0.05f }, { filtEnv, 0.4f }, { filtKey, 0.8f },
+            { ampA, 0.001f }, { ampD, 0.7f }, { ampS, 0.f }, { ampR, 0.4f }, { fA, 0.001f }, { fD, 0.15f }, { fS, 0.f }, { fR, 0.2f },
+            { lfoPitch, 0.f }, { lfoFilter, 0.f },
+            { crushBits, 14 }, { crushRate, 44100 }, { lofiTone, 11000 }, { wow, 0.03f }, { heat, 0.15f }, { crackle, 0.f },
+            { chorusMix, 0.3f }, { chorusRate, 0.5f }, { chorusDepth, 0.35f }, { delayMix, 0.3f }, { delayTime, 0.375f }, { delayFb, 0.4f }, { verbMix, 0.35f }, { verbSize, 0.8f }, { width, 0.9f }, { master, -6.f } } },
+
+        { "Axel F Lead", "Synthwave", {
+            { oscAWave, 0 }, { oscAUnison, 1 }, { oscALevel, 0.75f },
+            { oscBWave, 1 }, { oscBOct, 0 }, { oscBFine, 8 }, { oscBLevel, 0.55f }, { subLevel, 0.1f }, { noiseLevel, 0.f }, { drift, 0.2f },
+            { voiceMode, 1 }, { glide, 0.02f },
+            { filtType, 1 }, { filtCutoff, 2600 }, { filtRes, 0.3f }, { filtEnv, 0.5f }, { filtKey, 0.5f }, { filtDrive, 0.3f },
+            { ampA, 0.003f }, { ampD, 0.5f }, { ampS, 0.7f }, { ampR, 0.15f }, { fA, 0.003f }, { fD, 0.25f }, { fS, 0.3f }, { fR, 0.15f },
+            { lfoPitch, 0.f }, { lfoFilter, 0.f },
+            { crushBits, 14 }, { crushRate, 44100 }, { lofiTone, 11000 }, { wow, 0.03f }, { heat, 0.35f }, { crackle, 0.f },
+            { chorusMix, 0.2f }, { delayMix, 0.25f }, { delayTime, 0.25f }, { delayFb, 0.35f }, { verbMix, 0.25f }, { verbSize, 0.75f }, { width, 0.6f }, { master, -6.f } } },
+
+        { "Upside Down Arp", "Synthwave", {
+            { oscAWave, 0 }, { oscAUnison, 2 }, { oscADetune, 9 }, { oscALevel, 0.7f },
+            { oscBWave, 1 }, { oscBOct, -1 }, { oscBLevel, 0.4f }, { subLevel, 0.15f }, { noiseLevel, 0.f }, { drift, 0.3f },
+            { filtType, 1 }, { filtCutoff, 700 }, { filtRes, 0.35f }, { filtEnv, 0.75f }, { filtKey, 0.4f }, { filtDrive, 0.35f },
+            { ampA, 0.002f }, { ampD, 0.45f }, { ampS, 0.15f }, { ampR, 0.3f }, { fA, 0.002f }, { fD, 0.2f }, { fS, 0.1f }, { fR, 0.2f },
+            { lfoShape, 0 }, { lfoRate, 0.25f }, { lfoPitch, 0.f }, { lfoFilter, 0.2f },
+            { crushBits, 16 }, { crushRate, 48000 }, { lofiTone, 9000 }, { wow, 0.05f }, { heat, 0.45f }, { crackle, 0.f },
+            { chorusMix, 0.2f }, { delayMix, 0.35f }, { delayTime, 0.375f }, { delayFb, 0.5f }, { verbMix, 0.35f }, { verbSize, 0.85f }, { width, 0.9f }, { master, -6.f } } },
+
+        { "Miami Vice Pad", "Synthwave", {
+            { oscAWave, 0 }, { oscAUnison, 4 }, { oscADetune, 15 }, { oscALevel, 0.65f },
+            { oscBWave, 5 }, { oscBOct, 1 }, { oscBLevel, 0.3f }, { subLevel, 0.2f }, { noiseLevel, 0.f }, { drift, 0.25f },
+            { filtType, 0 }, { filtCutoff, 2000 }, { filtRes, 0.15f }, { filtEnv, 0.35f }, { filtKey, 0.3f },
+            { ampA, 0.5f }, { ampD, 2.f }, { ampS, 0.9f }, { ampR, 2.f }, { fA, 1.f }, { fD, 2.f }, { fS, 0.5f }, { fR, 1.5f },
+            { lfoShape, 0 }, { lfoRate, 0.3f }, { lfoPitch, 0.02f }, { lfoFilter, 0.1f },
+            { crushBits, 14 }, { crushRate, 44100 }, { lofiTone, 11000 }, { wow, 0.05f }, { heat, 0.25f }, { crackle, 0.f },
+            { chorusMix, 0.7f }, { chorusRate, 0.45f }, { chorusDepth, 0.55f }, { delayMix, 0.3f }, { delayTime, 0.5f }, { delayFb, 0.45f }, { verbMix, 0.55f }, { verbSize, 0.92f }, { width, 1.f }, { master, -7.f } } },
+
+        { "Enjoy The Silence Lead", "Synthwave", {
+            { oscAWave, 4 }, { oscAUnison, 2 }, { oscADetune, 7 }, { oscALevel, 0.75f },
+            { oscBWave, 0 }, { oscBOct, 1 }, { oscBLevel, 0.3f }, { subLevel, 0.05f }, { noiseLevel, 0.f }, { drift, 0.15f },
+            { voiceMode, 1 }, { glide, 0.03f },
+            { filtType, 0 }, { filtCutoff, 2200 }, { filtRes, 0.3f }, { filtEnv, 0.5f }, { filtKey, 0.5f }, { filtDrive, 0.3f },
+            { ampA, 0.004f }, { ampD, 0.7f }, { ampS, 0.75f }, { ampR, 0.3f }, { fA, 0.004f }, { fD, 0.35f }, { fS, 0.3f }, { fR, 0.25f },
+            { lfoShape, 0 }, { lfoRate, 5.f }, { lfoPitch, 0.015f }, { lfoFilter, 0.f },
+            { crushBits, 14 }, { crushRate, 44100 }, { lofiTone, 10000 }, { wow, 0.04f }, { heat, 0.35f }, { crackle, 0.f },
+            { chorusMix, 0.35f }, { delayMix, 0.4f }, { delayTime, 0.375f }, { delayFb, 0.5f }, { verbMix, 0.4f }, { verbSize, 0.88f }, { width, 0.9f }, { master, -6.f } } },
+
+        { "Moroder Disco Bass", "Synthwave", {
+            { oscAWave, 0 }, { oscAOct, -1 }, { oscAUnison, 1 }, { oscALevel, 0.8f },
+            { oscBWave, 0 }, { oscBOct, 0 }, { oscBFine, 4 }, { oscBLevel, 0.35f }, { subLevel, 0.35f }, { noiseLevel, 0.f }, { drift, 0.2f },
+            { voiceMode, 1 }, { glide, 0.f },
+            { filtType, 1 }, { filtCutoff, 550 }, { filtRes, 0.35f }, { filtEnv, 0.85f }, { filtKey, 0.3f }, { filtDrive, 0.45f },
+            { ampA, 0.002f }, { ampD, 0.22f }, { ampS, 0.2f }, { ampR, 0.08f }, { fA, 0.002f }, { fD, 0.1f }, { fS, 0.05f }, { fR, 0.06f },
+            { lfoPitch, 0.f }, { lfoFilter, 0.f },
+            { crushBits, 16 }, { crushRate, 48000 }, { lofiTone, 8000 }, { wow, 0.f }, { heat, 0.5f }, { dist, 0.08f }, { crackle, 0.f },
+            { chorusMix, 0.f }, { delayMix, 0.3f }, { delayTime, 0.1875f }, { delayFb, 0.35f }, { verbMix, 0.05f }, { width, 0.4f }, { master, -5.f } } },
     };
     return presets;
 }
