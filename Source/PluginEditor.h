@@ -223,8 +223,8 @@ private:
     Panel sampleP { "SAMPLE  -  drop a WAV / MP3 here, play it on the keys, run it through the lo-fi chain" };
     WaveformView waveform { proc };
     juce::TextButton loadSampleBtn { "LOAD" }, toMidiBtn { "TO MIDI" }, chopBtn { "CHOP IT" };
-    juce::ToggleButton smpLoopT { "LOOP" }, smpRevT { "REV" }, smpChopT { "CHOP" };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> smpLoopAtt, smpRevAtt, smpChopAtt;
+    juce::ToggleButton smpLoopT { "LOOP" }, smpRevT { "REV" }, smpChopT { "CHOP" }, smpHalfT { "HALF" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> smpLoopAtt, smpRevAtt, smpChopAtt, smpHalfAtt;
     FileDragPad notesPad { "DRAG NOTES >>" }, chopsPad { "DRAG CHOPS >>" };
     std::unique_ptr<juce::FileChooser> chooser;
 
@@ -234,8 +234,14 @@ private:
     juce::ComboBox keyBox, scaleBox, styleBox, barsBox, rhythmBox;
     juce::TextButton generateBtn { "GENERATE" }, playBtn { "PLAY" }, strumBtn { "STRUM" };
     juce::Label keyLbl { {}, "KEY" }, scaleLbl { {}, "SCALE" }, styleLbl { {}, "STYLE" }, barsLbl { {}, "LEN" }, rhythmLbl { {}, "FEEL" };
-    MidiDragPad chordPad { proc, 0 }, melodyPad { proc, 1 }, bassPad { proc, 2 };
-    juce::TextButton layerBtn[3] { juce::TextButton ("CHORDS"), juce::TextButton ("MELODY"), juce::TextButton ("808") };
+    MidiDragPad chordPad { proc, 0 }, melodyPad { proc, 1 }, bassPad { proc, 2 }, drumPad { proc, 3 };
+    juce::TextButton layerBtn[4] { juce::TextButton ("CHORDS"), juce::TextButton ("MELODY"), juce::TextButton ("808"), juce::TextButton ("DRUMS") };
+    juce::TextButton layerLoad[4] { juce::TextButton ("LOAD"), juce::TextButton ("LOAD"), juce::TextButton ("LOAD"), juce::TextButton ("LOAD") };
+    juce::Label drumSoundLbl { {}, "built-in kit" };
+    void showLoadMenu (int layer);      // MIDI (and loops, for DRUMS) from Documents/WXRST/Inbox or any file
+    void refreshLayerPads();
+    std::vector<juce::File> menuFiles;
+    int snapshotTicks = 0;
     juce::ComboBox layerSound[2];       // melody / 808 sound pickers
     juce::Label chordSoundLbl { {}, "main sound (knobs above)" };
     unsigned chordSeed = (unsigned) juce::Time::currentTimeMillis();

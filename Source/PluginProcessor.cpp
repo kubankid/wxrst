@@ -35,6 +35,8 @@ void IcewaterProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     sr = sampleRate;
     for (auto& e : engines) e.prepare (sampleRate, samplesPerBlock);
     layerBuffer.setSize (2, samplesPerBlock);
+    loopBuffer.setSize (2, samplesPerBlock);
+    drumKit.prepare (sampleRate);
 }
 
 bool IcewaterProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -72,28 +74,39 @@ void IcewaterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             if (auto bpm = pos->getBpm()) hostBpm.store (*bpm);
 
     // ---- Chord player ------------------------------------------------------------
-    layerMidi[chordsLayer].clear(); layerMidi[melodyLayer].clear(); layerMidi[bassLayer].clear();
+    for (auto& lm : layerMidi) lm.clear();
+    loopBuffer.setSize (2, n, false, false, true);
+    loopBuffer.clear();
     layerMidi[chordsLayer].addEvents (midi, 0, n, 0);   // live MIDI always plays the main sound
 
     if (chordStopRequested.exchange (false))
     {
-        for (int l = 0; l < 3; ++l)
+        for (int l = 0; l < numLayers; ++l)
         {
             for (int note : heldNotes[l]) layerMidi[l].addEvent (juce::MidiMessage::noteOff (1, note), 0);
             heldNotes[l].clear(); nextEvt[l] = 0;
         }
-        playBeat = 0.0; currentChord.store (-1); playPosition.store (0.0);
+        drumKit.allNotesOff();
+        playBeat = 0.0; drumLoopPos = 0.0; currentChord.store (-1); playPosition.store (0.0);
     }
 
     if (chordPlaying.load())
     {
         std::shared_ptr<const Progression> prog;
-        { const juce::ScopedTryLock sl (progLock); if (sl.isLocked()) prog = progression; }
+        std::shared_ptr<const SampleData> loop;
+        { const juce::ScopedTryLock sl (progLock); if (sl.isLocked()) { prog = progression; loop = drumLoop; } }
 
-        if (prog != nullptr && ! prog->events.empty())
+        const bool hasNotes = prog != nullptr && (! prog->events.empty() || ! prog->melodyEvents.empty()
+                                                  || ! prog->bassEvents.empty() || ! prog->drumEvents.empty());
+        if (hasNotes && prog->totalBeats > 0.0)
         {
             const double beatsPerSample = hostBpm.load() / 60.0 / sr;
-            const std::vector<NoteEvent>* lists[3] { &prog->events, &prog->melodyEvents, &prog->bassEvents };
+            const std::vector<NoteEvent>* lists[numLayers] { &prog->events, &prog->melodyEvents, &prog->bassEvents, &prog->drumEvents };
+            const bool loopOn = loop != nullptr && layerEnabled[drumsLayer].load() && loop->audio.getNumSamples() > 1;
+            const double loopInc = loopOn ? loop->sampleRate / sr : 0.0;
+            const float* loopL = loopOn ? loop->audio.getReadPointer (0) : nullptr;
+            const float* loopR = loopOn ? loop->audio.getReadPointer (loop->audio.getNumChannels() > 1 ? 1 : 0) : nullptr;
+            const int loopLen = loopOn ? loop->audio.getNumSamples() : 0;
 
             auto emit = [&] (int l, const NoteEvent& e, int offset)
             {
@@ -114,16 +127,28 @@ void IcewaterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             {
                 if (playBeat >= prog->totalBeats)
                 {
-                    for (int l = 0; l < 3; ++l)
+                    for (int l = 0; l < numLayers; ++l)
                     {
                         for (int note : heldNotes[l]) layerMidi[l].addEvent (juce::MidiMessage::noteOff (1, note), i);
                         heldNotes[l].clear(); nextEvt[l] = 0;
                     }
                     playBeat -= prog->totalBeats;
+                    drumLoopPos = 0.0;
                 }
-                for (int l = 0; l < 3; ++l)
+                for (int l = 0; l < numLayers; ++l)
                     while (nextEvt[l] < (int) lists[l]->size() && playBeat >= (*lists[l])[(size_t) nextEvt[l]].beat)
                         emit (l, (*lists[l])[(size_t) nextEvt[l]++], i);
+                if (loopOn)
+                {
+                    const int i0 = (int) drumLoopPos;
+                    if (i0 + 1 < loopLen)
+                    {
+                        const float fr = (float) (drumLoopPos - i0);
+                        loopBuffer.setSample (0, i, (loopL[i0] + (loopL[i0 + 1] - loopL[i0]) * fr) * 0.9f);
+                        loopBuffer.setSample (1, i, (loopR[i0] + (loopR[i0 + 1] - loopR[i0]) * fr) * 0.9f);
+                    }
+                    drumLoopPos += loopInc;
+                }
                 playBeat += beatsPerSample;
             }
 
@@ -135,7 +160,7 @@ void IcewaterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         }
     }
 
-    // ---- Render the three layers and sum --------------------------------------------
+    // ---- Render the layers and sum --------------------------------------------------
     for (int l = 0; l < 3; ++l)
     {
         if (l == chordsLayer)
@@ -149,6 +174,12 @@ void IcewaterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
                 for (int ch = 0; ch < 2; ++ch) buffer.addFrom (ch, 0, layerBuffer, ch, 0, n);
         }
     }
+    // drums: built-in kit for MIDI hits + the synced loop
+    layerBuffer.setSize (2, n, false, false, true);
+    layerBuffer.clear();
+    if (drumKit.process (layerBuffer, layerMidi[drumsLayer]))
+        for (int ch = 0; ch < 2; ++ch) buffer.addFrom (ch, 0, layerBuffer, ch, 0, n);
+    for (int ch = 0; ch < 2; ++ch) buffer.addFrom (ch, 0, loopBuffer, ch, 0, n);
 
     // ---- Scope + meter -------------------------------------------------------------
     auto* L = buffer.getReadPointer (0);
@@ -171,6 +202,59 @@ void IcewaterProcessor::setProgression (std::shared_ptr<const Progression> p)
     if (wasPlaying) setChordPlaying (false);
     { const juce::ScopedLock sl (progLock); progression = std::move (p); }
     if (wasPlaying) setChordPlaying (true);
+}
+
+juce::File IcewaterProcessor::inboxDir (int which)
+{
+    static const char* names[] = { "Chords", "Melody", "Drums" };
+    return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("WXRST").getChildFile ("Inbox")
+               .getChildFile (names[juce::jlimit (0, 2, which)]);
+}
+
+bool IcewaterProcessor::loadLayerMidi (Layer l, const juce::File& f)
+{
+    std::vector<NoteEvent> events; double len = 0.0;
+    if (! ChordGen::readMidiFile (f, events, len)) return false;
+    auto old = getProgression();
+    auto np = std::make_shared<Progression> (old ? *old : Progression());
+    if (! old) { np->totalBeats = 0.0; np->title = f.getFileNameWithoutExtension(); }
+    (l == chordsLayer ? np->events : l == melodyLayer ? np->melodyEvents : l == bassLayer ? np->bassEvents : np->drumEvents) = events;
+    const double bars = juce::jmax (4.0, std::ceil (len / 4.0) * 4.0);   // round up to whole bars
+    const bool othersHaveNotes = (l != chordsLayer && ! np->events.empty()) || (l != melodyLayer && ! np->melodyEvents.empty())
+                              || (l != bassLayer && ! np->bassEvents.empty()) || (l != drumsLayer && ! np->drumEvents.empty());
+    np->totalBeats = othersHaveNotes ? juce::jmax (np->totalBeats, bars) : bars;
+    layerFile[l] = f;
+    setProgression (np);
+    return true;
+}
+
+void IcewaterProcessor::clearLayer (Layer l)
+{
+    layerFile[l] = juce::File();
+    auto old = getProgression();
+    if (! old) return;
+    auto np = std::make_shared<Progression> (*old);
+    (l == chordsLayer ? np->events : l == melodyLayer ? np->melodyEvents : l == bassLayer ? np->bassEvents : np->drumEvents).clear();
+    if (l == chordsLayer) np->chords.clear();
+    setProgression (np);
+}
+
+bool IcewaterProcessor::loadDrumLoop (const juce::File& wav)
+{
+    auto data = SampleAnalysis::load (wav);
+    if (! data) return false;
+    const bool wasPlaying = chordPlaying.load();
+    if (wasPlaying) setChordPlaying (false);
+    { const juce::ScopedLock sl (progLock); drumLoop = data; }
+    drumLoopFile = wav;
+    if (wasPlaying) setChordPlaying (true);
+    return true;
+}
+
+void IcewaterProcessor::clearDrumLoop()
+{
+    { const juce::ScopedLock sl (progLock); drumLoop = nullptr; }
+    drumLoopFile = juce::File();
 }
 
 void IcewaterProcessor::setChordPlaying (bool shouldPlay)
@@ -315,7 +399,12 @@ void IcewaterProcessor::getStateInformation (juce::MemoryBlock& destData)
     apvts.state.setProperty ("program", currentProgram.load(), nullptr);
     apvts.state.setProperty ("melodyPreset", melodyPreset.load(), nullptr);
     apvts.state.setProperty ("bassPreset", bassPreset.load(), nullptr);
-    for (int l = 0; l < 3; ++l) apvts.state.setProperty ("layer" + juce::String (l), layerEnabled[l].load(), nullptr);
+    for (int l = 0; l < numLayers; ++l)
+    {
+        apvts.state.setProperty ("layer" + juce::String (l), layerEnabled[l].load(), nullptr);
+        apvts.state.setProperty ("layerFile" + juce::String (l), layerFile[l].getFullPathName(), nullptr);
+    }
+    apvts.state.setProperty ("drumLoop", drumLoopFile.getFullPathName(), nullptr);
     if (auto xml = apvts.copyState().createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -329,7 +418,14 @@ void IcewaterProcessor::setStateInformation (const void* data, int sizeInBytes)
             currentProgram = (int) apvts.state.getProperty ("program", 0);
             setLayerPreset (melodyLayer, (int) apvts.state.getProperty ("melodyPreset", melodyPreset.load()));
             setLayerPreset (bassLayer, (int) apvts.state.getProperty ("bassPreset", bassPreset.load()));
-            for (int l = 0; l < 3; ++l) layerEnabled[l] = (bool) apvts.state.getProperty ("layer" + juce::String (l), layerEnabled[l].load());
+            for (int l = 0; l < numLayers; ++l)
+            {
+                layerEnabled[l] = (bool) apvts.state.getProperty ("layer" + juce::String (l), layerEnabled[l].load());
+                juce::File lf (apvts.state.getProperty ("layerFile" + juce::String (l), "").toString());
+                if (lf.existsAsFile()) loadLayerMidi ((Layer) l, lf);
+            }
+            juce::File dl (apvts.state.getProperty ("drumLoop", "").toString());
+            if (dl.existsAsFile()) loadDrumLoop (dl);
             const juce::String up = apvts.state.getProperty ("userPreset", "").toString();
             currentUserPreset = -1;
             for (int i = 0; i < (int) userPresets.size(); ++i) if (userPresets[(size_t) i].name == up) currentUserPreset = i;

@@ -109,7 +109,7 @@ public:
             SampleParams sp;
             sp.level = get (ID::smpLevel); sp.root = (int) get (ID::smpRoot); sp.tune = get (ID::smpTune);
             sp.start = juce::jmin (get (ID::smpStart), get (ID::smpEnd)); sp.end = juce::jmax (get (ID::smpStart), get (ID::smpEnd));
-            sp.loop = get (ID::smpLoop) > 0.5f; sp.reverse = get (ID::smpRev) > 0.5f; sp.chop = get (ID::smpChop) > 0.5f;
+            sp.loop = get (ID::smpLoop) > 0.5f; sp.reverse = get (ID::smpRev) > 0.5f; sp.chop = get (ID::smpChop) > 0.5f; sp.half = get (ID::smpHalf) > 0.5f;
             sp.amp = vp.amp;
             int pos = 0;
             for (const auto meta : midi)

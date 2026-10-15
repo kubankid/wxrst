@@ -33,7 +33,7 @@ namespace ID
 
     // Sample section (plays a dropped sample through the same amp env + FX chain)
     inline constexpr auto smpLevel = "smpLevel", smpRoot = "smpRoot", smpTune = "smpTune", smpStart = "smpStart", smpEnd = "smpEnd";
-    inline constexpr auto smpLoop = "smpLoop", smpRev = "smpRev", smpChop = "smpChop";
+    inline constexpr auto smpLoop = "smpLoop", smpRev = "smpRev", smpChop = "smpChop", smpHalf = "smpHalf";
 }
 
 inline const juce::StringArray waveNames { "Saw", "Square", "Triangle", "Sine", "Pulse", "Glass" };
@@ -147,6 +147,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     b (ID::smpLoop, "Sample Loop", false);
     b (ID::smpRev, "Sample Reverse", false);
     b (ID::smpChop, "Sample Chop Mode", false);
+    b (ID::smpHalf, "Sample Halftime", false);
 
     return { p.begin(), p.end() };
 }

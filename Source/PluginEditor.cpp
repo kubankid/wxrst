@@ -312,13 +312,18 @@ void MidiDragPad::paint (juce::Graphics& g)
     g.setColour (has ? ice.withAlpha (0.6f) : panelEdge);
     g.drawRoundedRectangle (r.reduced (0.5f), 6.f, 1.f);
 
-    if (! has)
+    const std::vector<NoteEvent>* list = prog == nullptr ? nullptr
+        : kind == 0 ? &prog->events : kind == 1 ? &prog->melodyEvents : kind == 2 ? &prog->bassEvents : &prog->drumEvents;
+    const bool hasNotes = list != nullptr && ! list->empty();
+    if (! has || ! hasNotes)
     {
         g.setColour (dimText);
         g.setFont (juce::Font (juce::FontOptions (12.f)));
-        g.drawText (kind == 1 ? "Melody appears here" : kind == 2 ? "808 / bass line appears here"
-                              : "Hit GENERATE, then drag these boxes into FL's piano roll or playlist",
-                    r.toNearestInt(), juce::Justification::centred);
+        juce::String hintText = kind == 1 ? "Melody appears here" : kind == 2 ? "808 / bass line appears here"
+                              : kind == 3 ? "LOAD drum MIDI or a loop from WXRST XTRACT (Documents/WXRST/Inbox)"
+                              : "Hit GENERATE, then drag these boxes into FL's piano roll or playlist";
+        if (kind == 3 && proc.getDrumLoopName().isNotEmpty()) hintText = "loop: " + proc.getDrumLoopName() + "  (plays in sync with PLAY)";
+        g.drawText (hintText, r.toNearestInt(), juce::Justification::centred);
         return;
     }
 
@@ -326,12 +331,12 @@ void MidiDragPad::paint (juce::Graphics& g)
     auto hint = area.removeFromRight (118.f);
     g.setColour (ice);
     g.setFont (juce::Font (juce::FontOptions (11.f, juce::Font::bold)));
-    g.drawText (kind == 1 ? "DRAG MELODY  >>" : kind == 2 ? "DRAG 808  >>" : "DRAG CHORDS  >>", hint.toNearestInt(), juce::Justification::centredRight);
+    g.drawText (kind == 1 ? "DRAG MELODY  >>" : kind == 2 ? "DRAG 808  >>" : kind == 3 ? "DRAG DRUMS  >>" : "DRAG CHORDS  >>", hint.toNearestInt(), juce::Justification::centredRight);
 
     const bool playing = proc.isChordPlaying();
     const double pos = proc.playPosition.load();
 
-    if (kind == 0)
+    if (kind == 0 && ! prog->chords.empty())
     {
         const int n = (int) prog->chords.size();
         const int cur = playing ? proc.currentChord.load() : -1;
@@ -355,7 +360,7 @@ void MidiDragPad::paint (juce::Graphics& g)
     else
     {
         // mini piano roll
-        const auto& evs = kind == 1 ? prog->melodyEvents : prog->bassEvents;
+        const auto& evs = *list;
         int lo = 127, hi = 0;
         for (auto& e : evs) if (e.on) { lo = juce::jmin (lo, e.note); hi = juce::jmax (hi, e.note); }
         if (hi < lo) { lo = 72; hi = 84; }
@@ -578,7 +583,9 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
     sampleP.setBufferedToImage (false); // waveform changes, don't cache the panel
     sampleP.addAndMakeVisible (waveform);
     for (auto* b : { &loadSampleBtn, &toMidiBtn, &chopBtn }) sampleP.addAndMakeVisible (b);
-    for (auto* t : { &smpLoopT, &smpRevT, &smpChopT }) sampleP.addAndMakeVisible (t);
+    for (auto* t : { &smpLoopT, &smpRevT, &smpChopT, &smpHalfT }) sampleP.addAndMakeVisible (t);
+    smpHalfT.setTooltip ("Tape-style halftime: plays the sample at half speed, one octave down");
+    smpHalfAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, ID::smpHalf, smpHalfT);
     smpLoopAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, ID::smpLoop, smpLoopT);
     smpRevAtt  = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, ID::smpRev, smpRevT);
     smpChopAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, ID::smpChop, smpChopT);
@@ -618,7 +625,8 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
     chordsP.addAndMakeVisible (chordPad);
     chordsP.addAndMakeVisible (melodyPad);
     chordsP.addAndMakeVisible (bassPad);
-    for (int l = 0; l < 3; ++l)
+    chordsP.addAndMakeVisible (drumPad);
+    for (int l = 0; l < 4; ++l)
     {
         auto& b = layerBtn[l];
         chordsP.addAndMakeVisible (b);
@@ -626,7 +634,14 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
         b.setToggleState (proc.layerEnabled[l].load(), juce::dontSendNotification);
         b.setTooltip ("Include this layer when playing");
         b.onClick = [this, l] { proc.layerEnabled[l].store (layerBtn[l].getToggleState()); };
+        chordsP.addAndMakeVisible (layerLoad[l]);
+        layerLoad[l].setTooltip ("Load MIDI from WXRST XTRACT's inbox (Documents/WXRST/Inbox) or any .mid file into this row");
+        layerLoad[l].onClick = [this, l] { showLoadMenu (l); };
     }
+    drumSoundLbl.setFont (juce::Font (juce::FontOptions (10.f)));
+    drumSoundLbl.setColour (juce::Label::textColourId, dimText);
+    drumSoundLbl.setJustificationType (juce::Justification::centred);
+    chordsP.addAndMakeVisible (drumSoundLbl);
     for (int k = 0; k < 2; ++k)
     {
         auto& box = layerSound[k];
@@ -658,10 +673,29 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
     }
     playBtn.setToggleState (proc.isChordPlaying(), juce::dontSendNotification);
     playBtn.setButtonText (proc.isChordPlaying() ? "STOP" : "PLAY");
+    refreshLayerPads();
+
+    // WXRST_AUTOLOAD=1 (testing): pull the newest file from each inbox folder into its row
+    if (juce::SystemStats::getEnvironmentVariable ("WXRST_AUTOLOAD", {}).isNotEmpty())
+    {
+        auto newest = [] (int which, const juce::String& pattern) -> juce::File
+        {
+            juce::Array<juce::File> files;
+            IcewaterProcessor::inboxDir (which).findChildFiles (files, juce::File::findFiles, false, pattern);
+            juce::File best;
+            for (auto& f : files) if (best == juce::File() || f.getLastModificationTime() > best.getLastModificationTime()) best = f;
+            return best;
+        };
+        if (auto f = newest (0, "*.mid"); f.existsAsFile()) { proc.loadLayerMidi (IcewaterProcessor::chordsLayer, f); chordPad.setFile (f); }
+        if (auto f = newest (1, "*.mid"); f.existsAsFile()) { proc.loadLayerMidi (IcewaterProcessor::melodyLayer, f); melodyPad.setFile (f); }
+        if (auto f = newest (2, "*.mid"); f.existsAsFile()) { proc.loadLayerMidi (IcewaterProcessor::drumsLayer, f); drumPad.setFile (f); }
+        if (auto f = newest (2, "*.wav"); f.existsAsFile()) proc.loadDrumLoop (f);
+        refreshLayerPads();
+    }
 
     startTimerHz (10);
     timerCallback();
-    setSize (980, 988);
+    setSize (980, 1030);
 }
 
 void IcewaterEditor::generateChords()
@@ -673,11 +707,86 @@ void IcewaterEditor::generateChords()
     o.strum = strumBtn.getToggleState(); o.seed = chordSeed;
 
     auto prog = std::make_shared<Progression> (ChordGen::generate (o));
+    if (auto old = proc.getProgression()) prog->drumEvents = old->drumEvents;
     const auto names = ChordGen::chordListString (*prog);
     chordPad.setFile (ChordGen::writeMidiFile (prog->events, prog->title + " chords (" + names + ")", proc.getHostBpm()));
     melodyPad.setFile (ChordGen::writeMidiFile (prog->melodyEvents, prog->title + " melody (" + names + ")", proc.getHostBpm()));
     bassPad.setFile (ChordGen::writeMidiFile (prog->bassEvents, prog->title + " 808 (" + names + ")", proc.getHostBpm()));
     proc.setProgression (prog);
+    for (int l = 0; l < 3; ++l) proc.clearLayerFileOnly ((IcewaterProcessor::Layer) l);
+}
+
+void IcewaterEditor::refreshLayerPads()
+{
+    MidiDragPad* pads[4] { &chordPad, &melodyPad, &bassPad, &drumPad };
+    for (int l = 0; l < 4; ++l)
+    {
+        auto f = proc.getLayerFile ((IcewaterProcessor::Layer) l);
+        if (f.existsAsFile()) pads[l]->setFile (f);
+    }
+    auto loop = proc.getDrumLoopName();
+    drumSoundLbl.setText (loop.isNotEmpty() ? "kit + loop: " + loop : "built-in kit", juce::dontSendNotification);
+}
+
+void IcewaterEditor::showLoadMenu (int layer)
+{
+    const bool drums = layer == 3;
+    juce::PopupMenu menu;
+    menuFiles.clear();
+    static const char* folderNames[] = { "Chords", "Melody", "Drums" };
+    for (int which = 0; which < 3; ++which)
+    {
+        auto dir = IcewaterProcessor::inboxDir (which);
+        juce::Array<juce::File> files;
+        dir.findChildFiles (files, juce::File::findFiles, false, drums ? "*.mid;*.wav;*.aif;*.aiff" : "*.mid");
+        std::sort (files.begin(), files.end(), [] (const juce::File& a, const juce::File& b) { return a.getLastModificationTime() > b.getLastModificationTime(); });
+        juce::PopupMenu sub;
+        int shown = 0;
+        for (auto& f : files)
+        {
+            if (++shown > 25) break;
+            menuFiles.push_back (f);
+            const bool isMidi = f.hasFileExtension ("mid");
+            sub.addItem (1000 + (int) menuFiles.size() - 1, (isMidi ? "MIDI   " : "LOOP   ") + f.getFileNameWithoutExtension());
+        }
+        if (files.isEmpty()) sub.addItem (-1, "(empty - send something here from WXRST XTRACT)", false);
+        menu.addSubMenu (juce::String ("XTRACT inbox / ") + folderNames[which], sub);
+    }
+    menu.addSeparator();
+    menu.addItem (1, drums ? "Browse for a MIDI file or loop..." : "Browse for a MIDI file...");
+    menu.addItem (2, drums ? "Clear drums (notes + loop)" : "Clear this row");
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (layerLoad[layer]), [this, layer, drums] (int id)
+    {
+        auto load = [this, layer, drums] (const juce::File& f)
+        {
+            if (f.hasFileExtension ("mid"))
+            {
+                if (! proc.loadLayerMidi ((IcewaterProcessor::Layer) layer, f)) return;
+                MidiDragPad* pads[4] { &chordPad, &melodyPad, &bassPad, &drumPad };
+                pads[layer]->setFile (f);
+            }
+            else if (drums) proc.loadDrumLoop (f);
+            refreshLayerPads();
+        };
+        if (id >= 1000 && id - 1000 < (int) menuFiles.size()) load (menuFiles[(size_t) id - 1000]);
+        else if (id == 1)
+        {
+            chooser = std::make_unique<juce::FileChooser> ("Load into " + juce::String (layerBtn[layer].getButtonText()),
+                                                           IcewaterProcessor::inboxDir (drums ? 2 : layer == 1 ? 1 : 0),
+                                                           drums ? "*.mid;*.wav;*.aif;*.aiff" : "*.mid");
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                  [load] (const juce::FileChooser& fc) { if (fc.getResult().existsAsFile()) load (fc.getResult()); });
+        }
+        else if (id == 2)
+        {
+            proc.clearLayer ((IcewaterProcessor::Layer) layer);
+            if (drums) proc.clearDrumLoop();
+            MidiDragPad* pads[4] { &chordPad, &melodyPad, &bassPad, &drumPad };
+            pads[layer]->setFile (juce::File());
+            refreshLayerPads();
+        }
+    });
 }
 
 IcewaterEditor::~IcewaterEditor()
@@ -786,6 +895,15 @@ void IcewaterEditor::rebuildPresetList()
 
 void IcewaterEditor::timerCallback()
 {
+    // WXRST_SNAPSHOT=<png>: render the editor to a file (UI check without a screen)
+    if (auto snap = juce::SystemStats::getEnvironmentVariable ("WXRST_SNAPSHOT", {}); snap.isNotEmpty() && ++snapshotTicks == 20)
+    {
+        auto img = createComponentSnapshot (getLocalBounds(), false, 2.f);
+        juce::File f (snap); f.deleteFile();
+        juce::FileOutputStream os (f);
+        juce::PNGImageFormat().writeImageToStream (img, os);
+    }
+
     const int prog = proc.getCurrentProgram();
     const int up = proc.currentUserPreset.load();
     if (prog != lastProgram || up != lastUserPreset)
@@ -925,13 +1043,13 @@ void IcewaterEditor::resized()
         chopsPad.setBounds (pads.removeFromTop (42));
         r.removeFromRight (8);
         auto tog = r.removeFromRight (62);
-        smpLoopT.setBounds (tog.removeFromTop (28)); smpRevT.setBounds (tog.removeFromTop (28)); smpChopT.setBounds (tog.removeFromTop (28));
+        smpLoopT.setBounds (tog.removeFromTop (21)); smpRevT.setBounds (tog.removeFromTop (21)); smpChopT.setBounds (tog.removeFromTop (21)); smpHalfT.setBounds (tog.removeFromTop (21));
         r.removeFromRight (4);
         layoutKnobs (r, { K (ID::smpLevel), K (ID::smpRoot), K (ID::smpTune), K (ID::smpStart), K (ID::smpEnd) });
     }
 
     // Row 5 (chord engine)
-    chordsP.setBounds (16, 778, 948, 200);
+    chordsP.setBounds (16, 778, 948, 242);
     {
         auto r = chordsP.getLocalBounds().reduced (10).withTrimmedTop (28);
         auto top = r.removeFromTop (26);
@@ -952,15 +1070,18 @@ void IcewaterEditor::resized()
         generateBtn.setBounds (top.removeFromRight (96));
 
         r.removeFromTop (10);
-        MidiDragPad* pads[3] { &chordPad, &melodyPad, &bassPad };
-        for (int l = 0; l < 3; ++l)
+        MidiDragPad* pads[4] { &chordPad, &melodyPad, &bassPad, &drumPad };
+        for (int l = 0; l < 4; ++l)
         {
             auto row = r.removeFromTop (36);
             layerBtn[l].setBounds (row.removeFromLeft (76).reduced (0, 4));
             row.removeFromLeft (8);
             auto sound = row.removeFromRight (190);
-            row.removeFromRight (8);
+            row.removeFromRight (6);
+            layerLoad[l].setBounds (row.removeFromRight (50).reduced (0, 5));
+            row.removeFromRight (6);
             if (l == 0) chordSoundLbl.setBounds (sound);
+            else if (l == 3) drumSoundLbl.setBounds (sound);
             else layerSound[l - 1].setBounds (sound.reduced (0, 5));
             pads[l]->setBounds (row);
             r.removeFromTop (6);

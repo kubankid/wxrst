@@ -2,7 +2,7 @@
 
 Lo-fi / PS2-era / Drake-OVO pad, keys, 808 and bass synth with a built-in chord + melody + 808
 MIDI generator. Written entirely with Claude Code for Denny (music producer, FL Studio 2025,
-Apple M5 Max, macOS 27.2). Git repo since 2026-10-11, private remote https://github.com/kubankid/wxrst (renamed from denny-did-it) (JUCE is a git submodule). No tests. Last session: 2026-10-11.
+Apple M5 Max, macOS 27.2). Git repo since 2026-10-11, private remote https://github.com/kubankid/wxrst (renamed from denny-did-it) (JUCE is a git submodule). No tests. Last session: 2026-10-15.
 
 ## Build & install
 
@@ -56,6 +56,34 @@ AMP ENV, FILTER ENV, LFO, PITCH/VOICE (Poly/Mono, P.ENV, DECAY, GLIDE), GLOBAL (
 LO-FI (BITS, RATE, TONE, WOW, WOW RATE, HEAT, DIST, CRACKLE), CHORUS, DELAY, REVERB → SAMPLE (waveform drop zone, LOAD / TO MIDI / CHOP IT, LEVEL ROOT TUNE START END, LOOP REV CHOP toggles, DRAG NOTES / DRAG CHOPS pads) → CHORD ENGINE panel at bottom
 (KEY/SCALE/STYLE/LEN/FEEL combos, STRUM, GENERATE, PLAY; three rows CHORDS / MELODY / 808, each = enable toggle +
 drag pad + sound picker; chords row shows "main sound (knobs above)").
+
+## WXRST XTRACT (companion plugin, 2026-10-15)
+
+Separate repo `/Users/denny/Documents/XTRACT` (private remote https://github.com/kubankid/wxrst-xtract, CI builds Win + mac).
+Denny's brief (voice messages 2026-10-15): isolate stems from any sample, convert any stem to MIDI, feed WXRST's rows.
+- JUCE effect plugin "WXRST XTRACT" (code `Wxtr`, VST3 Fx / AU aufx / Standalone, universal). CMake target `XTRACT`,
+  JUCE taken from `../VST1/JUCE`. Build: `cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`
+  then `cmake --build build -j12` (installs into ~/Library/Audio/Plug-Ins itself; AU `auval -v aufx Wxtr Dnny` passes).
+- Stem separation = demucs.cpp (vendored `third_party/demucs`, Eigen + Accelerate BLAS on mac). 4-stem htdemucs default
+  (drums/bass/other/vocals); 6-stem adds guitar/piano but its piano output was weak in testing (4-stem "other" caught an
+  e-piano at 10 dB SDR). Weights are NOT in the repo: the plugin downloads them from huggingface (Retrobear/demucs.cpp) into
+  `~/Library/Application Support/WXRST/models/` (Windows `%APPDATA%\WXRST\models`). ~15 s for a 16 s clip on the M5 Max.
+- Audio->MIDI = Spotify Basic Pitch via basicpitch.cpp + prebuilt ONNX Runtime 1.20.1 (FetchContent; dylib copied into
+  Contents/Frameworks with @loader_path rpath; Windows delay-loads onnxruntime.dll from the plugin folder - untested).
+  Drums use my own 3-band spectral-flux onset detector (`Transcriber.cpp`: kick 36 / snare 38 / closed hat 42 / open 46),
+  tuned on Apple Loops so a disco beat gives 4-on-the-floor + 8th hats and a hip hop loop gives alternating kick/snare.
+- UI: SOURCE (LOAD / REC captures the insert's input / PLAY / LOOP / HEAR ORIGINAL-STEMS / region select on the waveform /
+  model combo / SEPARATE or GET MODEL) + 6 stem rows (M, S, level, TO MIDI, DRAG WAV, DRAG MIDI, TO WXRST: CHORDS MELODY DRUMS).
+  MIDI BPM box (blank = host). Stems + MIDI land in `~/Documents/WXRST/Xtract/<clip>/`; "TO WXRST" copies into
+  `~/Documents/WXRST/Inbox/{Chords,Melody,Drums}/`.
+- Test hooks: env `XTRACT_FILE=<audio>` preloads, `XTRACT_AUTO=1` separates + converts everything, `XTRACT_SNAPSHOT=<png>`
+  renders the editor to a PNG (screen capture was black on this machine - use this instead). Console test
+  `-DXTRACT_BUILD_TEST=ON` -> `build/XTRACT_TEST_artefacts/Release/XTRACT_TEST <file> [--6] [--drums] [outdir]`.
+- WXRST side (same date): chord engine has a 4th DRUMS row (built-in `DrumKit.h` synth for GM drum MIDI + a WAV loop that
+  plays in sync with PLAY, `Progression::drumEvents`, never generated), every row has a LOAD button (menu of the three Inbox
+  folders newest-first, Browse..., Clear; `IcewaterProcessor::loadLayerMidi/loadDrumLoop`, `ChordGen::readMidiFile`),
+  loaded files are saved in state (`layerFileN`, `drumLoop`). SAMPLE section got a HALF toggle (`smpHalf`: half speed, octave
+  down - tape style, not pitch-preserving). Window is now 980x1030. Env `WXRST_AUTOLOAD=1` / `WXRST_SNAPSHOT=<png>` for tests.
 
 ## Gotchas learned the hard way
 

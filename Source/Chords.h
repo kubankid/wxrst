@@ -26,6 +26,7 @@ struct Progression
     std::vector<NoteEvent> events;        // chord events, sorted by beat
     std::vector<NoteEvent> melodyEvents;  // melody events, sorted by beat
     std::vector<NoteEvent> bassEvents;    // 808 / bass line, sorted by beat
+    std::vector<NoteEvent> drumEvents;    // drum hits (GM notes), sorted by beat - loaded from XTRACT / a file, never generated
     double totalBeats = 16.0;
     juce::String title;
     int key = 0, scale = 0;
@@ -355,6 +356,36 @@ namespace ChordGen
 
         prog.title = keyNames[o.key] + " " + scaleNames[scaleIdx] + " - " + styleNames[o.style];
         return prog;
+    }
+
+    // Reads a standard MIDI file into beat-based note events (tempo is ignored: beats are beats).
+    inline bool readMidiFile (const juce::File& f, std::vector<NoteEvent>& out, double& lengthBeats)
+    {
+        juce::FileInputStream in (f);
+        if (! in.openedOk()) return false;
+        juce::MidiFile mf;
+        if (! mf.readFrom (in)) return false;
+        const short fmt = mf.getTimeFormat();
+        if (fmt <= 0) return false;   // SMPTE time not supported
+        const double tpq = (double) fmt;
+        out.clear(); lengthBeats = 0.0;
+        for (int t = 0; t < mf.getNumTracks(); ++t)
+        {
+            auto* seq = mf.getTrack (t);
+            for (int i = 0; i < seq->getNumEvents(); ++i)
+            {
+                const auto& m = seq->getEventPointer (i)->message;
+                if (! m.isNoteOnOrOff()) continue;
+                NoteEvent e;
+                e.beat = m.getTimeStamp() / tpq; e.note = m.getNoteNumber();
+                e.on = m.isNoteOn() && m.getVelocity() > 0; e.vel = (juce::uint8) juce::jmax (1, (int) m.getVelocity());
+                out.push_back (e);
+                lengthBeats = juce::jmax (lengthBeats, e.beat);
+            }
+        }
+        std::stable_sort (out.begin(), out.end(), [] (const NoteEvent& a, const NoteEvent& b)
+                          { return a.beat < b.beat || (a.beat == b.beat && ! a.on && b.on); });
+        return ! out.empty();
     }
 
     inline juce::File writeMidiFile (const std::vector<NoteEvent>& events, const juce::String& fileName, double bpm)

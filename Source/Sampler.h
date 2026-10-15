@@ -282,7 +282,7 @@ struct SampleParams
 {
     float level = 0.f, tune = 0.f, start = 0.f, end = 1.f;
     int root = 60;
-    bool loop = false, reverse = false, chop = false;
+    bool loop = false, reverse = false, chop = false, half = false;   // half = tape-style half speed (one octave down)
     juce::ADSR::Parameters amp;
 };
 
@@ -311,6 +311,7 @@ public:
             a = data->slices[(size_t) idx].first; b = data->slices[(size_t) idx].second;
             ratio = data->sampleRate / sr;
         }
+        if (p.half) ratio *= 0.5;
         if (b <= a + 1) return;
         // steal: free voice, else the oldest
         Voice* v = nullptr;
