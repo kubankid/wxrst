@@ -118,12 +118,40 @@ Denny's brief (voice messages 2026-10-15): isolate stems from any sample, conver
   chords/polyphony use XTRACT. Denny's "Mega Dragon Dropable" remark (voice-to-text) was read as "flip it like ..." -> the
   sampler sound controls; ask him if he meant something else.
 
+## In-plugin updater + public downloads (2026-10-16, late)
+
+- Denny asked to "push updates to the versions installed on my boys' computers". Answer: `Source/Updater.h` (IDENTICAL copy in
+  VST1, XTRACT and KeyFinder - edit one, copy to the others) + `UpdateBanner`. On construction the processor calls
+  `updater.checkNow()`: at most every 6 h it fetches `https://raw.githubusercontent.com/kubankid/denny-plugins-releases/main/version.json`
+  (PUBLIC repo, binaries only - Denny OK'd this; source repos stay private), compares `DENNY_VERSION` (CMake
+  `project(... VERSION)` passed as a compile definition) with the manifest, and the editor shows a banner strip
+  (WXRST: header at (330,56,506,22) next to the subtitle; XTRACT: where the status label sits; Key Finder: under the header).
+  Click = download zip to ~/Downloads, unzip, macOS: copy bundles into ~/Library/Audio/Plug-Ins/{VST3,Components} and say
+  "restart FL"; Windows: launch `install-windows.bat` from the zip (UAC prompt, xcopy into Common Files\VST3). "x" dismisses
+  that version. Cache/throttle file: `~/Library/DennyPlugins/updates-<key>.json` (note: juce userApplicationDataDirectory is
+  ~/Library on mac, not Application Support). The tiny version label under the scope (click = force check).
+- Env for tests: `DENNY_UPDATE_URL=<manifest url or path>`, `DENNY_UPDATE_FORCE=1`, `DENNY_NO_UPDATE=1`,
+  `DENNY_UPDATE_AUTOINSTALL=1` (clicks the banner). Tested end-to-end on this Mac with a fake 9.9.9 manifest served by
+  `python3 -m http.server` (banner, download, install into ~/Library/Audio/Plug-Ins verified).
+- Gotcha: `UpdateBanner updateBanner { proc.updater }` MUST be declared after `proc` in the editor class (dangling ref crash).
+- CI (`.github/workflows/build.yml` in all three repos): `ci/sign-mac.sh dist <zip>` does Developer ID codesign (runtime,
+  timestamp, nested dylibs first) + `notarytool submit --wait` + `stapler staple` when secrets `MACOS_CERT_P12` (base64 .p12),
+  `MACOS_CERT_PASSWORD`, `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD` exist, else it just zips (unsigned) with a warning.
+  Windows zips now contain `installer/install-windows.bat`. The release job fails if the git tag != `v<CMake VERSION>`.
+  Denny has a paid Apple Developer account but the secrets were NOT set yet as of 2026-10-16 - the v1.2.0 / v1.1.0 / v1.0.1
+  builds are unsigned; after he adds the secrets, re-cut tags (x.y.z+1) so the published zips are notarized. No Windows
+  Authenticode cert (SmartScreen only hits the standalone .exe; VST3 in FL is fine).
+- Versions now: WXRST 1.2.0, XTRACT 1.1.0, Key Finder 1.0.1 (tags pushed 2026-10-16). `~/Documents/DennyPlugins/publish.sh`
+  (replaces bundle.sh) pulls each repo's latest release, uploads per-plugin zips (XTRACT models stripped) to
+  `denny-plugins-releases` release `<key>-v<ver>`, rebuilds the combined bundles under `latest`, and PUTs `version.json` via
+  `gh api`. Run it after every re-tag. Friends' existing installs (pre-updater) must install once by hand.
+
 ## Releases + download hub (2026-10-16)
 
-- Tags so far: wxrst `v1.1.0`, wxrst-xtract `v1.0.0`, denny-key-finder `v1.0.0` (each repo's CI attaches Windows + macOS zips
+- Tags so far: wxrst `v1.2.0`, wxrst-xtract `v1.1.0`, denny-key-finder `v1.0.1` (earlier: v1.1.0 / v1.0.0 / v1.0.0) (each repo's CI attaches Windows + macOS zips
   to a GitHub Release on a `v*` tag). To ship a new version: commit, `git tag vX.Y.Z && git push --tags`, `gh run watch`.
-- `~/Documents/DennyPlugins` (PRIVATE repo https://github.com/kubankid/denny-plugins; Denny said "dont make it public", so
-  no GitHub Pages / public links) = combined downloads. `bundle.sh` pulls the latest release zips from the three repos,
+- `~/Documents/DennyPlugins` (PRIVATE repo https://github.com/kubankid/denny-plugins) = scripts + READMEs; downloads now live on the
+  PUBLIC binaries-only repo kubankid/denny-plugins-releases (see updater section). Old notes: `bundle.sh` (now `publish.sh`) pulled the latest release zips from the three repos,
   unzips into work/win + work/mac, STRIPS the Windows models folder (158 MB upload stalled at ~55 KB/s; XTRACT downloads
   models itself on first use anyway), zips `Denny-Plugins-Windows.zip` (29 MB) + `Denny-Plugins-macOS.zip` (85 MB) and
   uploads them with `--clobber` to the release tagged `latest` (`gh release edit latest --draft=false` afterwards or it
