@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include "Chords.h"
+#include "SynthVoice.h"
 
 // A loaded sample + things derived from it (peaks for drawing, slices from CHOP).
 struct SampleData
@@ -199,13 +200,18 @@ namespace SampleAnalysis
     }
 
     // ---- transient slicing ("CHOP") ------------------------------------------------------
-    inline std::vector<std::pair<int, int>> detectSlices (const SampleData& s, int maxSlices = 64)
+    // Drum loops give clean transients; melodic / sustained material gets fewer hits, so the threshold adapts
+    // downward until there are enough slices to be useful on the pads (about 2 per second, 4..32). If the audio
+    // is too smooth even for that and the tempo is known, slices fall on the beat grid instead.
+    inline std::vector<std::pair<int, int>> detectSlices (const SampleData& s, int maxSlices = 64, double bpm = 0.0)
     {
         std::vector<std::pair<int, int>> slices;
         auto m = monoMix (s);
         const int N = (int) m.size();
         const int hop = 256;
         if (N < hop * 4) { slices.push_back ({ 0, N }); return slices; }
+        const double seconds = N / s.sampleRate;
+        const int target = juce::jlimit (4, 32, (int) std::round (seconds * 2.0));
         // onset strength: rise in log energy of a pre-emphasised signal, 1024-sample window so
         // low kicks don't make the envelope wobble at their own pitch
         const int win = 1024;
@@ -223,13 +229,29 @@ namespace SampleAnalysis
 
         const int minGap = (int) (s.sampleRate * 0.08 / hop); // 80 ms
         std::vector<int> onsets;
-        for (size_t i = 1; i + 1 < onset.size(); ++i)
+        for (float thr : { 1.6f, 1.1f, 0.75f, 0.5f, 0.32f })
         {
-            float localMean = 0.f; int cnt = 0;
-            for (int d = -16; d <= 16; ++d) { const int j = (int) i + d; if (j >= 0 && j < (int) onset.size()) { localMean += onset[(size_t) j]; ++cnt; } }
-            localMean /= (float) juce::jmax (1, cnt);
-            const bool peak = onset[i] >= onset[i - 1] && onset[i] >= onset[i + 1] && onset[i] > localMean + 1.0f && onset[i] > 1.6f;
-            if (peak && (onsets.empty() || (int) i - onsets.back() >= minGap)) onsets.push_back ((int) i);
+            onsets.clear();
+            const float above = thr * 0.625f;   // local-mean margin scales with the absolute threshold
+            for (size_t i = 1; i + 1 < onset.size(); ++i)
+            {
+                float localMean = 0.f; int cnt = 0;
+                for (int d = -16; d <= 16; ++d) { const int j = (int) i + d; if (j >= 0 && j < (int) onset.size()) { localMean += onset[(size_t) j]; ++cnt; } }
+                localMean /= (float) juce::jmax (1, cnt);
+                const bool peak = onset[i] >= onset[i - 1] && onset[i] >= onset[i + 1] && onset[i] > localMean + above && onset[i] > thr;
+                if (peak && (onsets.empty() || (int) i - onsets.back() >= minGap)) onsets.push_back ((int) i);
+            }
+            if ((int) onsets.size() >= target) break;
+        }
+        if ((int) onsets.size() < 4 && bpm > 20.0)
+        {
+            // too smooth to slice by ear: one slice per beat, keeping any real hits that were found
+            const int beat = (int) (s.sampleRate * 60.0 / bpm / hop);
+            for (int b = 0; b * beat * hop < N; ++b) onsets.push_back (b * beat);
+            std::sort (onsets.begin(), onsets.end());
+            std::vector<int> merged;
+            for (int o : onsets) if (merged.empty() || o - merged.back() >= minGap) merged.push_back (o);
+            onsets.swap (merged);
         }
         if (onsets.empty() || onsets.front() * hop > (int) (s.sampleRate * 0.05)) onsets.insert (onsets.begin(), 0);
         if ((int) onsets.size() > maxSlices) onsets.resize ((size_t) maxSlices);
@@ -262,7 +284,7 @@ namespace SampleAnalysis
         return dir;
     }
 
-    // MIDI clip that re-triggers the chops in order (note 48 + slice index), at the host tempo.
+    // MIDI clip that re-triggers the chops in order (note 60 + slice index), at the host tempo.
     inline std::vector<NoteEvent> chopEvents (const SampleData& s, double bpm)
     {
         std::vector<NoteEvent> out;
@@ -270,8 +292,8 @@ namespace SampleAnalysis
         for (size_t i = 0; i < s.slices.size() && i < 64; ++i)
         {
             auto [a, b] = s.slices[i];
-            out.push_back ({ a * beatsPerSample, 48 + (int) i, true, 100 });
-            out.push_back ({ b * beatsPerSample - 0.01, 48 + (int) i, false, 0 });
+            out.push_back ({ a * beatsPerSample, 60 + (int) i, true, 100 });   // C5 up, matching SamplePlayer::chopBaseNote
+            out.push_back ({ b * beatsPerSample - 0.01, 60 + (int) i, false, 0 });
         }
         return out;
     }
@@ -283,7 +305,8 @@ struct SampleParams
     float level = 0.f, tune = 0.f, start = 0.f, end = 1.f;
     int root = 60;
     bool loop = false, reverse = false, chop = false, half = false;   // half = tape-style half speed (one octave down)
-    juce::ADSR::Parameters amp;
+    juce::ADSR::Parameters amp;      // the sampler's own envelope (smpA/D/S/R)
+    float cutoff = 20000.f, res = 0.f; // per-voice low-pass after the sample, before the FX chain
 };
 
 class SamplePlayer
@@ -304,11 +327,11 @@ public:
         const int N = data->length();
         int a = (int) (p.start * N), b = (int) (p.end * N);
         double ratio = std::pow (2.0, (note - p.root + p.tune) / 12.0) * data->sampleRate / sr;
+        int slice = -1;
         if (p.chop && ! data->slices.empty())
         {
-            const int idx = note - 48;
-            if (idx < 0 || idx >= (int) data->slices.size()) return;
-            a = data->slices[(size_t) idx].first; b = data->slices[(size_t) idx].second;
+            slice = sliceForNote (note, (int) data->slices.size());
+            a = data->slices[(size_t) slice].first; b = data->slices[(size_t) slice].second;
             ratio = data->sampleRate / sr;
         }
         if (p.half) ratio *= 0.5;
@@ -317,10 +340,11 @@ public:
         Voice* v = nullptr;
         for (auto& c : voices) if (! c.active) { v = &c; break; }
         if (v == nullptr) { v = &voices[0]; for (auto& c : voices) if (c.age > v->age) v = &c; }
-        v->active = true; v->note = note; v->vel = vel; v->start = a; v->end = b; v->age = 0;
+        v->active = true; v->note = note; v->slice = slice; v->vel = vel; v->start = a; v->end = b; v->age = 0;
         v->inc = p.reverse ? -ratio : ratio;
         v->pos = p.reverse ? (double) (b - 1) : (double) a;
         v->env.setParameters (p.amp); v->env.reset(); v->env.noteOn();
+        v->lp[0] = SVF(); v->lp[1] = SVF();
     }
 
     void noteOff (int note) { for (auto& v : voices) if (v.active && v.note == note) v.env.noteOff(); }
@@ -333,10 +357,12 @@ public:
         auto* L = out.getWritePointer (0, startSample);
         auto* R = out.getNumChannels() > 1 ? out.getWritePointer (1, startSample) : nullptr;
         const float gain = p.level * 0.9f;
+        const bool filt = p.cutoff < 19000.f;
         for (auto& v : voices)
         {
             if (! v.active) continue;
             v.env.setParameters (p.amp);
+            if (filt) { v.lp[0].set (p.cutoff, p.res, sr); v.lp[1].set (p.cutoff, p.res, sr); }
             v.age += num;
             for (int i = 0; i < num; ++i)
             {
@@ -349,8 +375,9 @@ public:
                 const int i1 = juce::jmin (v.end - 1, i0 + 1);
                 const float e = v.env.getNextSample() * v.vel * gain;
                 if (! v.env.isActive()) { v.active = false; break; }
-                const float l = (src[0][i0] + (src[0][i1] - src[0][i0]) * frac) * e;
-                const float r = (src[1][i0] + (src[1][i1] - src[1][i0]) * frac) * e;
+                float l = (src[0][i0] + (src[0][i1] - src[0][i0]) * frac) * e;
+                float r = (src[1][i0] + (src[1][i1] - src[1][i0]) * frac) * e;
+                if (filt) { l = v.lp[0].process (l); r = v.lp[1].process (r); }
                 L[i] += l; if (R != nullptr) R[i] += r;
                 v.pos += v.inc;
             }
@@ -358,9 +385,22 @@ public:
     }
 
     bool anyActive() const { for (auto& v : voices) if (v.active) return true; return false; }
+    bool hasSample() const { return data != nullptr; }
+
+    // Chops sit on the keys from C5 (MIDI 60, FL's middle C) upward and wrap, so every key plays something.
+    static constexpr int chopBaseNote = 60;
+    static int sliceForNote (int note, int numSlices) { return numSlices <= 0 ? -1 : (((note - chopBaseNote) % numSlices) + numSlices) % numSlices; }
+
+    // Bit i set = slice i is sounding right now (for the pads). Call from any thread.
+    juce::uint64 activeSlices() const
+    {
+        juce::uint64 m = 0;
+        for (auto& v : voices) if (v.active && v.slice >= 0 && v.slice < 64) m |= (juce::uint64) 1 << v.slice;
+        return m;
+    }
 
 private:
-    struct Voice { bool active = false; int note = -1; float vel = 1.f; double pos = 0, inc = 1; int start = 0, end = 0, age = 0; juce::ADSR env; };
+    struct Voice { bool active = false; int note = -1, slice = -1; float vel = 1.f; double pos = 0, inc = 1; int start = 0, end = 0, age = 0; ExpADSR env; SVF lp[2]; };
     Voice voices[8];
     std::shared_ptr<const SampleData> data;
     double sr = 44100.0;

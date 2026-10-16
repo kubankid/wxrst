@@ -420,11 +420,20 @@ void WaveformView::paint (juce::Graphics& g)
     // slices
     if (! s->slices.empty())
     {
-        g.setColour (iceGlow.withAlpha (0.35f));
+        const bool big = getWidth() > 600;
+        int idx = 0;
         for (auto& sl : s->slices)
         {
             const float x = area.getX() + area.getWidth() * (float) sl.first / (float) juce::jmax (1, s->length());
+            g.setColour (iceGlow.withAlpha (0.35f));
             g.drawVerticalLine ((int) x, area.getY(), area.getBottom());
+            if (big && idx < 64)
+            {
+                g.setColour (iceGlow.withAlpha (0.8f));
+                g.setFont (juce::Font (juce::FontOptions (9.f, juce::Font::bold)));
+                g.drawText (juce::String (idx + 1), (int) x + 3, (int) area.getBottom() - 14, 24, 12, juce::Justification::centredLeft);
+            }
+            ++idx;
         }
     }
 
@@ -444,7 +453,7 @@ void WaveformView::paint (juce::Graphics& g)
     g.setColour (text);
     g.setFont (juce::Font (juce::FontOptions (11.f, juce::Font::bold)));
     juce::String info = s->name + "   " + juce::String (s->length() / s->sampleRate, 1) + "s";
-    if (! s->slices.empty()) info += "   " + juce::String ((int) s->slices.size()) + " chops (C3 up)";
+    if (! s->slices.empty()) info += "   " + juce::String ((int) s->slices.size()) + " chops (C5 up)";
     g.drawText (info, getLocalBounds().reduced (8, 4), juce::Justification::topLeft);
 }
 
@@ -461,6 +470,68 @@ void FileDragPad::paint (juce::Graphics& g)
     g.drawText (has ? label : juce::String ("-"), getLocalBounds(), juce::Justification::centred);
 }
 
+// ---------------------------------------------------------------------------
+juce::String SlicePads::keyName (int note)
+{
+    static const char* names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    return juce::String (names[(note % 12 + 12) % 12]) + juce::String (note / 12);   // FL: 60 = C5
+}
+
+int SlicePads::padAt (juce::Point<int> pt) const
+{
+    const int cw = getWidth() / cols, ch = getHeight() / rows;
+    if (cw <= 0 || ch <= 0) return -1;
+    const int c = pt.x / cw, r = pt.y / ch;
+    if (c < 0 || c >= cols || r < 0 || r >= rows) return -1;
+    return r * cols + c;
+}
+
+void SlicePads::mouseDown (const juce::MouseEvent& e)
+{
+    held = padAt (e.getPosition());
+    if (held >= 0) proc.auditionNote (SamplePlayer::chopBaseNote + held, true);
+}
+
+void SlicePads::mouseUp (const juce::MouseEvent&)
+{
+    if (held >= 0) proc.auditionNote (SamplePlayer::chopBaseNote + held, false);
+    held = -1;
+}
+
+void SlicePads::timerCallback()
+{
+    auto s = proc.getSample();
+    const auto mask = proc.activeSlices();
+    if (mask != lastMask || s.get() != lastSample) { lastMask = mask; lastSample = s.get(); repaint(); }
+}
+
+void SlicePads::paint (juce::Graphics& g)
+{
+    auto s = proc.getSample();
+    const int nSlices = s ? (int) s->slices.size() : 0;
+    const bool chop = proc.apvts.getRawParameterValue (ID::smpChop)->load() > 0.5f && nSlices > 0;
+    const auto mask = proc.activeSlices();
+    const float cw = (float) getWidth() / cols, ch = (float) getHeight() / rows;
+    for (int i = 0; i < count; ++i)
+    {
+        auto r = juce::Rectangle<float> ((i % cols) * cw, (i / cols) * ch, cw, ch).reduced (3.f);
+        const int note = SamplePlayer::chopBaseNote + i;
+        const int slice = chop ? SamplePlayer::sliceForNote (note, nSlices) : -1;
+        const bool lit = slice >= 0 && (mask & ((juce::uint64) 1 << slice)) != 0;
+        const bool real = chop && i < nSlices;        // pads past the last slice wrap around: shown dimmer
+        g.setColour (lit ? ice.withAlpha (0.55f) : screen);
+        g.fillRoundedRectangle (r, 6.f);
+        g.setColour (lit ? iceGlow : (real ? ice.withAlpha (0.6f) : panelEdge));
+        g.drawRoundedRectangle (r.reduced (0.5f), 6.f, lit ? 2.f : 1.f);
+        g.setColour (real || ! chop ? text : dimText);
+        g.setFont (juce::Font (juce::FontOptions (chop ? 15.f : 13.f, juce::Font::bold)));
+        if (chop) g.drawText (juce::String (slice + 1), r.reduced (6.f, 4.f), juce::Justification::topLeft);
+        g.setFont (juce::Font (juce::FontOptions (10.f, juce::Font::bold)));
+        g.setColour (dimText);
+        g.drawText (keyName (note), r.reduced (6.f, 4.f), chop ? juce::Justification::bottomRight : juce::Justification::centred);
+    }
+}
+
 void MidiDragPad::mouseDrag (const juce::MouseEvent& e)
 {
     if (dragging || ! file.existsAsFile() || e.getDistanceFromDragStart() < 8) return;
@@ -474,11 +545,13 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
     : AudioProcessorEditor (&p), proc (p)
 {
     setLookAndFeel (&lnf);
-    addAndMakeVisible (background);
+    addAndMakeVisible (content);
+    content.setBounds (0, 0, baseWidth, 1030);
+    content.addAndMakeVisible (background);
 
     for (auto* pn : { &oscA, &oscB, &filter, &ampEnv, &filtEnv, &lfo, &pitchP, &global, &lofi, &chorusP, &delayP, &verbP, &chordsP })
     {
-        addAndMakeVisible (pn);
+        content.addAndMakeVisible (pn);
         pn->setBufferedToImage (true);
     }
     animBtn.setClickingTogglesState (true);
@@ -490,8 +563,8 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
         proc.apvts.state.setProperty ("anim", animBtn.getToggleState(), nullptr);
     };
     background.setAnimating (animBtn.getToggleState());
-    addAndMakeVisible (animBtn);
-    addAndMakeVisible (scope);
+    content.addAndMakeVisible (animBtn);
+    content.addAndMakeVisible (scope);
     ampEnv.addAndMakeVisible (ampEnvDisp);
     filtEnv.addAndMakeVisible (filtEnvDisp);
 
@@ -553,12 +626,12 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
     };
     saveBtn.setTooltip ("Save the current sound as a user preset");
     saveBtn.onClick = [this] { saveUserPresetDialog(); };
-    addAndMakeVisible (saveBtn);
+    content.addAndMakeVisible (saveBtn);
     prevBtn.onClick = [step] { step (-1); };
     nextBtn.onClick = [step] { step (1); };
     diceBtn.onClick = [this] { proc.randomiseSound(); };
     diceBtn.setTooltip ("Roll the dice: randomise the sound");
-    addAndMakeVisible (categoryBox); addAndMakeVisible (presetBox); addAndMakeVisible (prevBtn); addAndMakeVisible (nextBtn); addAndMakeVisible (diceBtn);
+    content.addAndMakeVisible (categoryBox); content.addAndMakeVisible (presetBox); content.addAndMakeVisible (prevBtn); content.addAndMakeVisible (nextBtn); content.addAndMakeVisible (diceBtn);
 
     // MIDNIGHT MODE: the skin follows the sound. Picking a Synthwave / 16-Bit preset flips to the 80s look,
     // picking anything else flips back to ICE. The tab is a manual override until the next preset change.
@@ -573,13 +646,13 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
             if (idx >= 0 && categoryBox.getSelectedId() != idx + 1) categoryBox.setSelectedId (idx + 1, juce::sendNotificationSync);
         }
     };
-    addAndMakeVisible (midnightTab);
+    content.addAndMakeVisible (midnightTab);
     const auto envTheme = juce::SystemStats::getEnvironmentVariable ("ICEWATER_THEME", "");
     if (envTheme.isNotEmpty()) { midnightTab.setToggleState (envTheme.getIntValue() == 1, juce::dontSendNotification); applyTheme (envTheme.getIntValue()); }
     else                       { applyTheme (0); syncThemeToPreset (proc.getCurrentProgram()); }
 
     // Sample section
-    addAndMakeVisible (sampleP);
+    content.addAndMakeVisible (sampleP);
     sampleP.setBufferedToImage (false); // waveform changes, don't cache the panel
     sampleP.addAndMakeVisible (waveform);
     for (auto* b : { &loadSampleBtn, &toMidiBtn, &chopBtn }) sampleP.addAndMakeVisible (b);
@@ -592,17 +665,62 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
     addKnob (sampleP, ID::smpLevel, "LEVEL"); addKnob (sampleP, ID::smpRoot, "ROOT"); addKnob (sampleP, ID::smpTune, "TUNE");
     addKnob (sampleP, ID::smpStart, "START"); addKnob (sampleP, ID::smpEnd, "END");
     sampleP.addAndMakeVisible (notesPad); sampleP.addAndMakeVisible (chopsPad);
-    loadSampleBtn.onClick = [this]
-    {
-        chooser = std::make_unique<juce::FileChooser> ("Load a sample", juce::File::getSpecialLocation (juce::File::userHomeDirectory),
-                                                       "*.wav;*.aif;*.aiff;*.mp3;*.flac;*.ogg;*.m4a");
-        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                              [this] (const juce::FileChooser& fc) { if (fc.getResult().existsAsFile()) proc.loadSampleFile (fc.getResult()); });
-    };
+    loadSampleBtn.onClick = [this] { loadSampleDialog(); };
+    waveform.onDropped = [this] { setPage (1); };
     toMidiBtn.setTooltip ("Pitch-track the sample into a MIDI clip (melodies, bass, vocals)");
-    toMidiBtn.onClick = [this] { notesPad.setFile (proc.extractNotesMidi()); };
-    chopBtn.setTooltip ("Slice the sample at transients: each slice goes on its own key from C3 up, WAVs land in Documents/WXRST/Chops");
-    chopBtn.onClick = [this] { juce::File dir; chopsPad.setFile (proc.chopSample (dir)); };
+    toMidiBtn.onClick = [this] { setSampleFiles (proc.extractNotesMidi(), {}); };
+    chopBtn.setTooltip ("Slice the sample at transients: each slice goes on its own key / pad from C5 up, WAVs land in Documents/WXRST/Chops");
+    chopBtn.onClick = [this] { juce::File dir; setSampleFiles ({}, proc.chopSample (dir)); setPage (1); };
+    sampleFold.setTooltip ("Collapse / expand");
+    sampleP.addAndMakeVisible (sampleFold);
+    sampleFold.onClick = [this] { sampleOpen = ! sampleOpen; proc.apvts.state.setProperty ("uiSampleOpen", sampleOpen, nullptr); applyWindowSize(); };
+
+    // ---- SAMPLER page ----
+    content.addAndMakeVisible (samplerP);
+    samplerP.setBufferedToImage (false);
+    samplerP.addAndMakeVisible (bigWave);
+    for (auto* b : { &sLoadBtn, &sMidiBtn, &sChopBtn }) samplerP.addAndMakeVisible (b);
+    for (auto* t : { &sLoopT, &sRevT, &sChopT, &sHalfT, &sOnlyT }) samplerP.addAndMakeVisible (t);
+    samplerP.addAndMakeVisible (sNotesPad); samplerP.addAndMakeVisible (sChopsPad);
+    samplerP.addAndMakeVisible (pads);
+    samplerP.addAndMakeVisible (padHint);
+    padHint.setFont (juce::Font (juce::FontOptions (10.f)));
+    padHint.setColour (juce::Label::textColourId, dimText);
+    padHint.setText ("PADS / KEYS: pad 1 = C5 (FL's middle C), going up. Before CHOP IT the pads play the sample pitched. Click a pad to hear it; DRAG CHOPS drops the slice order into FL as MIDI.", juce::dontSendNotification);
+    sLoopAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, ID::smpLoop, sLoopT);
+    sRevAtt  = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, ID::smpRev, sRevT);
+    sChopAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, ID::smpChop, sChopT);
+    sHalfAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, ID::smpHalf, sHalfT);
+    sOnlyAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, ID::smpOnly, sOnlyT);
+    sHalfT.setTooltip ("Tape-style halftime: plays the sample at half speed, one octave down");
+    sOnlyT.setTooltip ("On: the keys play only the sample while one is loaded. Off: sample layered on top of the synth preset.");
+    for (auto [id, text] : std::initializer_list<std::pair<const char*, const char*>> {
+             { ID::smpLevel, "LEVEL" }, { ID::smpRoot, "ROOT" }, { ID::smpTune, "TUNE" }, { ID::smpStart, "START" }, { ID::smpEnd, "END" },
+             { ID::smpA, "ATTACK" }, { ID::smpD, "DECAY" }, { ID::smpS, "SUSTAIN" }, { ID::smpR, "RELEASE" }, { ID::smpCut, "CUTOFF" }, { ID::smpRes, "RES" } })
+    {
+        auto* k = knobs.add (new Knob (proc.apvts, id, text));
+        samplerP.addAndMakeVisible (k);
+        samplerKnobs.push_back (k);
+    }
+    sLoadBtn.onClick = [this] { loadSampleDialog(); };
+    sMidiBtn.setTooltip ("Pitch-track the sample into a MIDI clip (melodies, bass, vocals)");
+    sMidiBtn.onClick = [this] { setSampleFiles (proc.extractNotesMidi(), {}); };
+    sChopBtn.setTooltip ("Slice the sample at transients: one slice per pad / key from C5 up, WAVs land in Documents/WXRST/Chops");
+    sChopBtn.onClick = [this] { juce::File dir; setSampleFiles ({}, proc.chopSample (dir)); };
+
+    // ---- pages / collapsing ----
+    samplerTab.setTooltip ("SAMPLER page: big waveform, pads, the sampler's own envelope + filter");
+    samplerTab.onClick = [this] { setPage (samplerTab.getToggleState() ? 1 : 0); };
+    content.addAndMakeVisible (samplerTab);
+    chordsFold.setTooltip ("Collapse / expand");
+    chordsP.addAndMakeVisible (chordsFold);
+    chordsFold.onClick = [this] { chordsOpen = ! chordsOpen; proc.apvts.state.setProperty ("uiChordsOpen", chordsOpen, nullptr); applyWindowSize(); };
+    chordsOpen = (bool) proc.apvts.state.getProperty ("uiChordsOpen", true);
+    sampleOpen = (bool) proc.apvts.state.getProperty ("uiSampleOpen", false);
+    uiScale = juce::jlimit (0.5f, 2.f, (float) (double) proc.apvts.state.getProperty ("uiScale", 1.0));
+    const auto envPage = juce::SystemStats::getEnvironmentVariable ("WXRST_PAGE", "");
+    page = envPage.isNotEmpty() ? envPage.getIntValue() : (int) proc.apvts.state.getProperty ("uiPage", 0);
+    samplerTab.setToggleState (page == 1, juce::dontSendNotification);
     for (auto* k : { &oscAWave }) juce::ignoreUnused (k);
 
     // Chord generator
@@ -695,7 +813,8 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
 
     startTimerHz (10);
     timerCallback();
-    setSize (980, 1030);
+    setResizable (true, true);
+    setPage (page);          // sets visibility + window size (setSize must stay at the end: knobs need to exist)
 }
 
 void IcewaterEditor::generateChords()
@@ -904,6 +1023,9 @@ void IcewaterEditor::timerCallback()
         juce::PNGImageFormat().writeImageToStream (img, os);
     }
 
+    if (juce::SystemStats::getEnvironmentVariable ("WXRST_AUTOCHOP", "") == "1" && snapshotTicks == 10)
+        if (auto smp = proc.getSample(); smp != nullptr && smp->slices.empty()) sChopBtn.onClick();
+
     const int prog = proc.getCurrentProgram();
     const int up = proc.currentUserPreset.load();
     if (prog != lastProgram || up != lastUserPreset)
@@ -944,21 +1066,85 @@ void IcewaterEditor::layoutKnobs (juce::Rectangle<int> area, std::initializer_li
     }
 }
 
+int IcewaterEditor::baseHeight() const
+{
+    const int rowsBottom = 632;                                   // synth rows 1-3 (page 0) or the sampler panel (page 1) end here + sample row
+    int y = rowsBottom + 10;
+    if (page == 0) y += (sampleOpen ? 128 : 28) + 8;
+    else y += 128 + 8;                                            // sampler panel is taller by exactly the open sample row
+    y += (chordsOpen ? 242 : 28);
+    return y + 10;
+}
+
+void IcewaterEditor::applyWindowSize()
+{
+    const int h = baseHeight();
+    if (auto* c = getConstrainer())
+    {
+        c->setFixedAspectRatio ((double) baseWidth / (double) h);
+        c->setSizeLimits (baseWidth / 2, h / 2, baseWidth * 2, h * 2);
+    }
+    setSize (juce::roundToInt (baseWidth * uiScale), juce::roundToInt (h * uiScale));
+    layoutContent();
+}
+
+void IcewaterEditor::setPage (int p)
+{
+    page = juce::jlimit (0, 1, p);
+    proc.apvts.state.setProperty ("uiPage", page, nullptr);
+    samplerTab.setToggleState (page == 1, juce::dontSendNotification);
+    for (auto* pn : { &oscA, &oscB, &filter, &ampEnv, &filtEnv, &lfo, &pitchP, &global, &lofi, &chorusP, &delayP, &verbP, &sampleP })
+        pn->setVisible (page == 0);
+    samplerP.setVisible (page == 1);
+    applyWindowSize();
+}
+
+void IcewaterEditor::setPanelOpen (Panel& panel, juce::TextButton& fold, bool open)
+{
+    for (auto* c : panel.getChildren()) if (c != &fold) c->setVisible (open);
+    fold.setButtonText (open ? "-" : "+");
+    fold.setBounds (panel.getWidth() - 30, 4, 22, 20);
+}
+
+void IcewaterEditor::loadSampleDialog()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Load a sample", juce::File::getSpecialLocation (juce::File::userHomeDirectory),
+                                                   "*.wav;*.aif;*.aiff;*.mp3;*.flac;*.ogg;*.m4a");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc) { if (fc.getResult().existsAsFile() && proc.loadSampleFile (fc.getResult())) setPage (1); });
+}
+
+void IcewaterEditor::setSampleFiles (const juce::File& notes, const juce::File& chops)
+{
+    if (notes != juce::File()) { notesPad.setFile (notes); sNotesPad.setFile (notes); }
+    if (chops != juce::File()) { chopsPad.setFile (chops); sChopsPad.setFile (chops); }
+}
+
 void IcewaterEditor::resized()
 {
+    uiScale = (float) getWidth() / (float) baseWidth;
+    proc.apvts.state.setProperty ("uiScale", (double) uiScale, nullptr);
+    content.setTransform (juce::AffineTransform::scale (uiScale));
+    layoutContent();
+}
+
+void IcewaterEditor::layoutContent()
+{
     auto K = [&] (const char* id) { return knobById[id]; };
+    content.setBounds (0, 0, baseWidth, baseHeight());
 
     // Header
-    background.setBounds (getLocalBounds());
+    background.setBounds (content.getLocalBounds());
     animBtn.setBounds (216, 24, 24, 24);
     categoryBox.setBounds (250, 22, 86, 28);
     prevBtn.setBounds (342, 22, 26, 28);
-    presetBox.setBounds (372, 22, 186, 28);
-    nextBtn.setBounds (562, 22, 26, 28);
-    diceBtn.setBounds (596, 20, 32, 32);
-    midnightTab.setBounds (638, 22, 84, 28);
-    saveBtn.setBounds (730, 22, 52, 28);
-    scope.setBounds (792, 12, 172, 52);
+    presetBox.setBounds (372, 22, 160, 28);
+    nextBtn.setBounds (536, 22, 26, 28);
+    diceBtn.setBounds (570, 20, 32, 32);
+    midnightTab.setBounds (610, 22, 84, 28);
+    samplerTab.setBounds (700, 22, 80, 28);
+    saveBtn.setBounds (788, 22, 52, 28);
+    scope.setBounds (850, 12, 114, 52);
 
     // Row 1
     oscA.setBounds (16, 82, 300, 215);
@@ -1027,8 +1213,12 @@ void IcewaterEditor::resized()
     layoutKnobs (delayP.getLocalBounds().reduced (8).withTrimmedTop (24), { K (ID::delayMix), K (ID::delayTime), K (ID::delayFb) });
     layoutKnobs (verbP.getLocalBounds().reduced (8).withTrimmedTop (24), { K (ID::verbMix), K (ID::verbSize), K (ID::verbDamp) });
 
-    // Row 4 (sample)
-    sampleP.setBounds (16, 642, 948, 128);
+    // Row 4 (sample) - collapsible
+    int y = 642;
+    sampleP.setBounds (16, y, 948, sampleOpen ? 128 : 28);
+    setPanelOpen (sampleP, sampleFold, sampleOpen);
+    y += sampleP.getHeight() + 8;
+    if (sampleOpen)
     {
         auto r = sampleP.getLocalBounds().reduced (10).withTrimmedTop (24);
         waveform.setBounds (r.removeFromLeft (330));
@@ -1048,8 +1238,39 @@ void IcewaterEditor::resized()
         layoutKnobs (r, { K (ID::smpLevel), K (ID::smpRoot), K (ID::smpTune), K (ID::smpStart), K (ID::smpEnd) });
     }
 
-    // Row 5 (chord engine)
-    chordsP.setBounds (16, 778, 948, 242);
+    // SAMPLER page (replaces rows 1-4)
+    if (page == 1)
+    {
+        y = 82 + 688 + 8;
+        samplerP.setBounds (16, 82, 948, 688);
+        auto r = samplerP.getLocalBounds().reduced (10).withTrimmedTop (24);
+        bigWave.setBounds (r.removeFromTop (230));
+        r.removeFromTop (8);
+        auto row = r.removeFromTop (26);
+        sLoadBtn.setBounds (row.removeFromLeft (80)); row.removeFromLeft (6);
+        sMidiBtn.setBounds (row.removeFromLeft (80)); row.removeFromLeft (6);
+        sChopBtn.setBounds (row.removeFromLeft (90)); row.removeFromLeft (14);
+        for (auto* t : { &sLoopT, &sRevT, &sChopT, &sHalfT }) { t->setBounds (row.removeFromLeft (62)); row.removeFromLeft (2); }
+        row.removeFromLeft (10);
+        sOnlyT.setBounds (row.removeFromLeft (200));
+        sChopsPad.setBounds (row.removeFromRight (116).reduced (0, 0)); row.removeFromRight (6);
+        sNotesPad.setBounds (row.removeFromRight (116));
+        r.removeFromTop (8);
+        auto kr = r.removeFromTop (100);
+        {
+            const int n = (int) samplerKnobs.size(), cellW = kr.getWidth() / n, size = juce::jmin (cellW, kr.getHeight() - 14);
+            int x = kr.getX();
+            for (auto* k : samplerKnobs) { k->setBounds (juce::Rectangle<int> (x, kr.getY(), cellW, kr.getHeight()).withSizeKeepingCentre (size, size + 14)); x += cellW; }
+        }
+        r.removeFromTop (4);
+        padHint.setBounds (r.removeFromTop (16));
+        pads.setBounds (r);
+    }
+
+    // Row 5 (chord engine) - collapsible
+    chordsP.setBounds (16, y, 948, chordsOpen ? 242 : 28);
+    setPanelOpen (chordsP, chordsFold, chordsOpen);
+    if (chordsOpen)
     {
         auto r = chordsP.getLocalBounds().reduced (10).withTrimmedTop (28);
         auto top = r.removeFromTop (26);
@@ -1089,8 +1310,8 @@ void IcewaterEditor::resized()
     }
 
     std::vector<juce::Rectangle<int>> panelRects;
-    for (auto* pn : { &oscA, &oscB, &filter, &ampEnv, &filtEnv, &lfo, &pitchP, &global, &lofi, &chorusP, &delayP, &verbP, &sampleP, &chordsP })
-        panelRects.push_back (pn->getBounds());
+    for (auto* pn : { &oscA, &oscB, &filter, &ampEnv, &filtEnv, &lfo, &pitchP, &global, &lofi, &chorusP, &delayP, &verbP, &sampleP, &chordsP, &samplerP })
+        if (pn->isVisible()) panelRects.push_back (pn->getBounds());
     panelRects.push_back (scope.getBounds());
     panelRects.push_back (presetBox.getBounds());
     background.setExclusions (panelRects);

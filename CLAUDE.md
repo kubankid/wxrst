@@ -2,7 +2,7 @@
 
 Lo-fi / PS2-era / Drake-OVO pad, keys, 808 and bass synth with a built-in chord + melody + 808
 MIDI generator. Written entirely with Claude Code for Denny (music producer, FL Studio 2025,
-Apple M5 Max, macOS 27.2). Git repo since 2026-10-11, private remote https://github.com/kubankid/wxrst (renamed from denny-did-it) (JUCE is a git submodule). No tests. Last session: 2026-10-16 (release/download hub; no code changes since 2b9e0d2 / tag v1.1.0).
+Apple M5 Max, macOS 27.2). Git repo since 2026-10-11, private remote https://github.com/kubankid/wxrst (renamed from denny-did-it) (JUCE is a git submodule). No tests. Last session: 2026-10-16 evening (SAMPLER page, resizable window, collapsible rows, exp envelopes, XTRACT MIDI cleanup) - NOT tagged/released yet; Denny has not tested any of it.
 
 ## Build & install
 
@@ -49,7 +49,7 @@ auval -v aumu Wxrs Dnny          # AU validation, passes
 | `Chords.h` | `NoteEvent`, `Chord`, `Progression {chords, events, melodyEvents, bassEvents, totalBeats, title}`, `ChordGen` (keyNames, scaleNames, styleNames, barNames, rhythmNames, `Options{key,scale,style,bars,rhythm,strum,seed}`, `generate()`, `writeMidiFile()`, `chordListString()`). Scales: Minor, Major, Dorian, Harmonic Minor, Lydian, Phrygian. Styles: Drake/OVO, Lo-Fi, Dreamy, Sad, Uplifting, PS2 Menu, Dark Trap, Neo-Soul, Ambient. FEEL: Whole bars, Mixed, Pushed, Half bars. MIDI files written to `~/Documents/ICEWATER Chords/`. Melody rule (Denny, 2026-10-11): notes lean on the key's 1st/4th/5th degrees ("anchors"): chord starts always, downbeats 70%, stepwise runs settle on anchors 40%, final note forced to 1 or 5. Console test `ICEWATER_BUILD_TEST` (`Source/ChordTest.cpp`) reports the anchor percentages (~84% notes / ~94% downbeats). |
 | `PluginProcessor.h/.cpp` | `IcewaterProcessor`: `apvts`, user presets (`userPresets`, `currentUserPreset`, `loadUserPreset`, `saveUserPreset`; state prop "userPreset" = name), sample (`loadSampleFile`, `getSample`, `extractNotesMidi`, `chopSample`; state prop "samplePath" reloads on open; env `ICEWATER_SAMPLE=<path>` preloads for screenshots), `loadPreset` resets all params EXCEPT `smp*`, `Engine engines[3]` (0 chords = main knobs, 1 melody, 2 808/bass with their own preset snapshots), `layerEnabled[3]`, `setLayerPreset/getLayerPreset` (applied on audio thread via `pendingLayerLoad`), progression playback synced to host BPM routing to `layerMidi[3]`, `loadPreset`, `randomiseSound` (DICE), programs API, state save/load (program, melodyPreset, bassPreset, layer0..2, anim flag), scope/meter atomics. |
 | `LookAndFeel.h` | `IceColours` = MUTABLE inline globals + `applyTheme(0 ICE / 1 MIDNIGHT)` (Midnight = violet #0b0614 bg, magenta #ff3fa4 accent, purple #8a2be2 deep, sunset gold #ffc46b glow); `IceLookAndFeel` (`refreshColours()` re-applies after a theme switch; `drawTabButton` for the header tab). |
-| `PluginEditor.h/.cpp` | `AnimatedBackground` (6 aurora blobs at 1/8 scale, 6 fps + ~90 header particles at 24 fps, ~4% of one core, toggled by "~" button, saved in state), `Knob`, `Panel`, `Scope`, `EnvDisplay`, `MidiDragPad` (kind 0/1/2, external file drag into FL), `DiceButton` (real die with pips, rolls a random face per click), `TabButton` ("MIDNIGHT" header tab), `IcewaterEditor` (DragAndDropContainer; `applyTheme()` swaps colours, refreshes label colours, `sendLookAndFeelChange`, re-renders background). Midnight background: magenta/violet/orange haze blobs, perspective grid scrolling below the header, striped sunset sun behind the logo, twinkling stars. Theme FOLLOWS THE PRESET (Denny's call): `syncThemeToPreset()` runs on every program change - Synthwave / 16-Bit category -> Midnight, anything else -> ICE. The MIDNIGHT tab is a manual override until the next preset change; turning it on jumps the category combo to Synthwave. Nothing theme-related is saved in state. Denny wants playable instruments only, no one-shot "hit" presets. Env `ICEWATER_THEME=0/1` overrides for screenshots. Window 980×988 (SAMPLE row at y 642, chord engine at 778). Logo text "WXRST" (34pt), subtitle "THE WORST PLUGIN / ..." (differs per theme). |
+| `PluginEditor.h/.cpp` | `AnimatedBackground` (6 aurora blobs at 1/8 scale, 6 fps + ~90 header particles at 24 fps, ~4% of one core, toggled by "~" button, saved in state), `Knob`, `Panel`, `Scope`, `EnvDisplay`, `MidiDragPad` (kind 0/1/2, external file drag into FL), `DiceButton` (real die with pips, rolls a random face per click), `TabButton` ("MIDNIGHT" header tab), `IcewaterEditor` (DragAndDropContainer; `applyTheme()` swaps colours, refreshes label colours, `sendLookAndFeelChange`, re-renders background). Midnight background: magenta/violet/orange haze blobs, perspective grid scrolling below the header, striped sunset sun behind the logo, twinkling stars. Theme FOLLOWS THE PRESET (Denny's call): `syncThemeToPreset()` runs on every program change - Synthwave / 16-Bit category -> Midnight, anything else -> ICE. The MIDNIGHT tab is a manual override until the next preset change; turning it on jumps the category combo to Synthwave. Nothing theme-related is saved in state. Denny wants playable instruments only, no one-shot "hit" presets. Env `ICEWATER_THEME=0/1` overrides for screenshots. Design size 980 wide (scaled; see 2026-10-16 evening notes), SAMPLE row at y 642, chord engine below it. Logo text "WXRST" (34pt), subtitle "THE WORST PLUGIN / ..." (differs per theme). |
 
 Editor layout: header (anim "~", category combo, </> , preset combo, dice icon, MIDNIGHT tab, SAVE, scope) → panels OSC A, OSC B, FILTER,
 AMP ENV, FILTER ENV, LFO, PITCH/VOICE (Poly/Mono, P.ENV, DECAY, GLIDE), GLOBAL (SUB, NOISE, DRIFT, WIDTH, MASTER),
@@ -84,6 +84,39 @@ Denny's brief (voice messages 2026-10-15): isolate stems from any sample, conver
   folders newest-first, Browse..., Clear; `IcewaterProcessor::loadLayerMidi/loadDrumLoop`, `ChordGen::readMidiFile`),
   loaded files are saved in state (`layerFileN`, `drumLoop`). SAMPLE section got a HALF toggle (`smpHalf`: half speed, octave
   down - tape style, not pitch-preserving). Window is now 980x1030. Env `WXRST_AUTOLOAD=1` / `WXRST_SNAPSHOT=<png>` for tests.
+
+## 2026-10-16 evening session (Denny's feedback: "MIDI extractor is kind of ass", chops unplayable, sample plays under the synth, window too big, 808 clips at note end)
+
+- **XTRACT MIDI** (`Transcriber.cpp`): Basic Pitch's raw detection was fine (100% recall on synthetic tests); the mess was
+  octave/harmonic ghost notes + held chord notes split at every melody attack + nothing on the grid. Now: cleanup pass
+  (ghosts at +12/+19/+24/+28/+31/-12/-24 st that are clearly weaker get dropped; split notes re-joined when the onset is
+  explained by a harmonic neighbour), `NoteOptions{cleanup, mono}` (MONO toggle; bass stem always mono), `snapToGrid`
+  (SNAP 1/16 toggle at the MIDI BPM, default on), file names containing "140bpm"/"_140_" prefill the BPM box. The vendored
+  basicpitch lib now exposes `infer_note_events()` + `frame_times()` and its std::cout spam is gone. Bench:
+  `cmake -DXTRACT_BUILD_TEST=ON`, `build/NOTES_BENCH_artefacts/Release/NOTES_BENCH [-v]` (synthetic ground-truth suites) or
+  `NOTES_BENCH <wav> <bpm> [out.mid] [--raw] [--mono] [--snap=4]`. Known: Basic Pitch onsets run ~10 ms early on sharp attacks.
+- **WXRST SAMPLER page**: header tab SAMPLER (next to MIDNIGHT) swaps rows 1-4 for one big panel: big waveform with numbered
+  slice markers, LOAD / TO MIDI / CHOP IT, LOOP REV CHOP HALF + **SAMPLE ONLY (mute synth)** (`smpOnly`, default ON = keys play
+  just the sample while one is loaded; Engine feeds the synth an empty MidiBuffer), knobs LEVEL ROOT TUNE START END +
+  the sampler's own ATTACK DECAY SUSTAIN RELEASE CUTOFF RES (`smpA/D/S/R/Cut/Res`; per-voice SVF LP in `SamplePlayer`,
+  no longer borrows the synth amp env), 32 `SlicePads` (8x4; click = `auditionNote()` through a lock-free FIFO into the
+  main layer; lit from `SamplePlayer::activeSlices()`). **Chops now start at MIDI 60 = FL's C5 and wrap** (`chopBaseNote`,
+  `sliceForNote`) - the old C3 (48) base is why Denny "couldn't play it" after CHOP IT. `chopEvents` MIDI uses 60+i too.
+  Loading/dropping a sample or hitting CHOP IT jumps to the SAMPLER page. The small SAMPLE row on the SYNTH page still exists
+  but is collapsed by default.
+- **Slicer** `detectSlices(s, max, bpm)` is adaptive: thresholds 1.6 -> 0.32 until ~2 slices/sec (4..32), beat-grid fallback
+  when the audio is too smooth. The Splice lead loop went from 4 to 45 chops.
+- **Window**: everything lives in `content` (980 wide design size) scaled by `uiScale` via AffineTransform; `setResizable`,
+  aspect locked, limits 0.5x..2x, scale saved in state ("uiScale"). CHORD ENGINE and SAMPLE rows collapse to a 28 px title
+  bar via the -/+ button at the right of the title (state props "uiChordsOpen", "uiSampleOpen", page = "uiPage"). The window
+  height changes with page + collapse state (`baseHeight()`); `applyWindowSize()` is the only place that calls setSize.
+  Env `WXRST_PAGE=1` opens the sampler page, `WXRST_AUTOCHOP=1` chops the preloaded sample after 10 ticks (snapshots).
+- **Envelopes**: `ExpADSR` (SynthVoice.h) replaces juce::ADSR for synth voices and the sampler: linear attack, exponential
+  decay / release. juce::ADSR is linear, which is why the 808s (sustain 0, release 0.25 s) sounded like they clipped at the
+  end of the note. Same `juce::ADSR::Parameters`, so presets are untouched (they will sound a touch longer-tailed).
+- Not done / still weak: WXRST's own TO MIDI (`SampleAnalysis::extractNotes`) is still the mono autocorrelation tracker - for
+  chords/polyphony use XTRACT. Denny's "Mega Dragon Dropable" remark (voice-to-text) was read as "flip it like ..." -> the
+  sampler sound controls; ask him if he meant something else.
 
 ## Releases + download hub (2026-10-16)
 

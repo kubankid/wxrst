@@ -140,9 +140,10 @@ public:
     void filesDropped (const juce::StringArray& files, int, int) override
     {
         hover = false;
-        for (auto& f : files) if (proc.loadSampleFile (juce::File (f))) break;
+        for (auto& f : files) if (proc.loadSampleFile (juce::File (f))) { if (onDropped) onDropped(); break; }
         repaint();
     }
+    std::function<void()> onDropped;
 private:
     void timerCallback() override { auto s = proc.getSample(); if (s.get() != lastShown) { lastShown = s.get(); repaint(); } }
     IcewaterProcessor& proc;
@@ -171,6 +172,25 @@ private:
     bool dragging = false;
 };
 
+// SAMPLER page: 32 pads. After CHOP IT each pad is one slice (C5 upward, like the keys); before that they are plain keys.
+class SlicePads : public juce::Component, private juce::Timer
+{
+public:
+    static constexpr int cols = 8, rows = 4, count = cols * rows;
+    SlicePads (IcewaterProcessor& p) : proc (p) { startTimerHz (20); }
+    void paint (juce::Graphics& g) override;
+    void mouseDown (const juce::MouseEvent& e) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    static juce::String keyName (int note);   // FL naming: 60 = C5
+private:
+    void timerCallback() override;
+    int padAt (juce::Point<int> pt) const;
+    IcewaterProcessor& proc;
+    juce::uint64 lastMask = 0;
+    const SampleData* lastSample = nullptr;
+    int held = -1;
+};
+
 class IcewaterEditor : public juce::AudioProcessorEditor, public juce::DragAndDropContainer, private juce::Timer
 {
 public:
@@ -186,6 +206,20 @@ private:
     Knob& addKnob (Panel& panel, const char* id, const juce::String& text);
     void setupCombo (juce::ComboBox& box, const juce::StringArray& items, const char* id,
                      std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>& att, Panel& parent);
+
+    // Everything lives in `content` at the fixed 980-wide design size; the window scales it as one piece.
+    static constexpr int baseWidth = 980;
+    juce::Component content;
+    float uiScale = 1.f;
+    int page = 0;                          // 0 SYNTH, 1 SAMPLER
+    bool chordsOpen = true, sampleOpen = false;
+    void setPage (int p);
+    void layoutContent();
+    int baseHeight() const;
+    void applyWindowSize();                // window = base size * uiScale, aspect locked
+    void setPanelOpen (Panel& panel, juce::TextButton& fold, bool open);
+    juce::TextButton chordsFold { "-" }, sampleFold { "-" };
+    TabButton samplerTab { "SAMPLER" };
 
     IcewaterProcessor& proc;
     IceLookAndFeel lnf;
@@ -227,6 +261,19 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> smpLoopAtt, smpRevAtt, smpChopAtt, smpHalfAtt;
     FileDragPad notesPad { "DRAG NOTES >>" }, chopsPad { "DRAG CHOPS >>" };
     std::unique_ptr<juce::FileChooser> chooser;
+    void loadSampleDialog();
+    void setSampleFiles (const juce::File& notes, const juce::File& chops);
+
+    // SAMPLER page
+    Panel samplerP { "SAMPLER  -  drop a sample, CHOP IT, play the pads / keys from C5 up. LO-FI + FX on the SYNTH page still apply." };
+    WaveformView bigWave { proc };
+    juce::TextButton sLoadBtn { "LOAD" }, sMidiBtn { "TO MIDI" }, sChopBtn { "CHOP IT" };
+    juce::ToggleButton sLoopT { "LOOP" }, sRevT { "REV" }, sChopT { "CHOP" }, sHalfT { "HALF" }, sOnlyT { "SAMPLE ONLY (mute synth)" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> sLoopAtt, sRevAtt, sChopAtt, sHalfAtt, sOnlyAtt;
+    FileDragPad sNotesPad { "DRAG NOTES >>" }, sChopsPad { "DRAG CHOPS >>" };
+    std::vector<Knob*> samplerKnobs;
+    SlicePads pads { proc };
+    juce::Label padHint;
 
     // Chord generator
     void generateChords();

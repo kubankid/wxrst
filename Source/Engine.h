@@ -102,7 +102,10 @@ public:
         }
         else monoHeld.clear();
 
-        synth.renderNextBlock (buffer, midi, 0, n);
+        // SAMPLE ONLY: while a sample is loaded the keys play just the sample; synth voices already sounding fade out
+        const bool sampleOnly = sampler.hasSample() && get (ID::smpOnly) > 0.5f && get (ID::smpLevel) > 0.0001f;
+        if (sampleOnly) { silentMidi.clear(); synth.renderNextBlock (buffer, silentMidi, 0, n); }
+        else synth.renderNextBlock (buffer, midi, 0, n);
 
         // ---- Sample layer: same MIDI, same amp envelope, summed before the FX ----
         {
@@ -110,7 +113,8 @@ public:
             sp.level = get (ID::smpLevel); sp.root = (int) get (ID::smpRoot); sp.tune = get (ID::smpTune);
             sp.start = juce::jmin (get (ID::smpStart), get (ID::smpEnd)); sp.end = juce::jmax (get (ID::smpStart), get (ID::smpEnd));
             sp.loop = get (ID::smpLoop) > 0.5f; sp.reverse = get (ID::smpRev) > 0.5f; sp.chop = get (ID::smpChop) > 0.5f; sp.half = get (ID::smpHalf) > 0.5f;
-            sp.amp = vp.amp;
+            sp.amp = { get (ID::smpA), get (ID::smpD), get (ID::smpS), get (ID::smpR) };
+            sp.cutoff = get (ID::smpCut); sp.res = get (ID::smpRes);
             int pos = 0;
             for (const auto meta : midi)
             {
@@ -272,7 +276,7 @@ private:
     double sr = 44100.0;
     int tailSamples = 0;
     std::vector<int> monoHeld;
-    juce::MidiBuffer monoBuffer;
+    juce::MidiBuffer monoBuffer, silentMidi;
 
     float holdL = 0.f, holdR = 0.f, holdCounter = 0.f;
     juce::dsp::StateVariableTPTFilter<float> toneFilter;

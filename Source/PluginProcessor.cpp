@@ -39,6 +39,12 @@ void IcewaterProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     drumKit.prepare (sampleRate);
 }
 
+void IcewaterProcessor::auditionNote (int note, bool on)
+{
+    const auto w = uiFifo.write (1);
+    if (w.blockSize1 == 1) uiQueue[(size_t) w.startIndex1] = on ? juce::MidiMessage::noteOn (1, note, (juce::uint8) 110) : juce::MidiMessage::noteOff (1, note);
+}
+
 bool IcewaterProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo()
@@ -78,6 +84,11 @@ void IcewaterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     loopBuffer.setSize (2, n, false, false, true);
     loopBuffer.clear();
     layerMidi[chordsLayer].addEvents (midi, 0, n, 0);   // live MIDI always plays the main sound
+    {   // pads on the SAMPLER page
+        const auto r = uiFifo.read (uiFifo.getNumReady());
+        for (int i = 0; i < r.blockSize1; ++i) layerMidi[chordsLayer].addEvent (uiQueue[(size_t) (r.startIndex1 + i)], 0);
+        for (int i = 0; i < r.blockSize2; ++i) layerMidi[chordsLayer].addEvent (uiQueue[(size_t) (r.startIndex2 + i)], 0);
+    }
 
     if (chordStopRequested.exchange (false))
     {
@@ -379,7 +390,7 @@ juce::File IcewaterProcessor::chopSample (juce::File& chopDirOut)
     auto s = getSample();
     if (s == nullptr) return {};
     auto chopped = std::make_shared<SampleData> (*s);
-    chopped->slices = SampleAnalysis::detectSlices (*chopped);
+    chopped->slices = SampleAnalysis::detectSlices (*chopped, 64, getHostBpm());
     chopDirOut = SampleAnalysis::writeChops (*chopped, juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("WXRST").getChildFile ("Chops"));
     setSample (chopped);
     if (auto* p = apvts.getParameter (ID::smpChop)) p->setValueNotifyingHost (1.f);

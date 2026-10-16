@@ -33,6 +33,53 @@ struct IceSound : public juce::SynthesiserSound
 };
 
 // Simple TPT state-variable lowpass (Zavalishin), one per channel.
+// Analog-style ADSR: linear attack, exponential decay / release (a linear envelope sounds like it
+// "falls off a cliff" at the end of an 808 or a pad tail). Takes juce::ADSR::Parameters so presets are unchanged:
+// decay = time to get within ~1% of the sustain level, release = time to drop ~60 dB.
+class ExpADSR
+{
+public:
+    void setSampleRate (double rate) { sr = rate; }
+    void setParameters (const juce::ADSR::Parameters& p)
+    {
+        if (p.attack == prm.attack && p.decay == prm.decay && p.sustain == prm.sustain && p.release == prm.release) return;
+        prm = p;
+        attackInc = 1.f / (float) juce::jmax (1.0, p.attack * sr);
+        decayCoef = std::exp (-4.6f / (float) juce::jmax (1.0, p.decay * sr));
+        releaseCoef = std::exp (-6.9f / (float) juce::jmax (1.0, p.release * sr));
+    }
+    void reset() { state = Idle; level = 0.f; }
+    void noteOn() { state = Attack; if (prm.attack <= 0.0015f) { level = 1.f; state = Decay; } }
+    void noteOff() { if (state != Idle) state = Release; }
+    bool isActive() const { return state != Idle; }
+    float getNextSample()
+    {
+        switch (state)
+        {
+            case Attack:
+                level += attackInc;
+                if (level >= 1.f) { level = 1.f; state = Decay; }
+                break;
+            case Decay:
+                level = prm.sustain + (level - prm.sustain) * decayCoef;
+                if (level - prm.sustain < 0.0005f) { level = prm.sustain; if (prm.sustain <= 0.0005f) { level = 0.f; state = Idle; } else state = Sustain; }
+                break;
+            case Sustain: level = prm.sustain; break;
+            case Release:
+                level *= releaseCoef;
+                if (level < 0.0005f) { level = 0.f; state = Idle; }
+                break;
+            case Idle: default: return 0.f;
+        }
+        return level;
+    }
+private:
+    enum State { Idle, Attack, Decay, Sustain, Release } state = Idle;
+    juce::ADSR::Parameters prm { -1.f, -1.f, -1.f, -1.f };
+    double sr = 44100.0;
+    float level = 0.f, attackInc = 0.01f, decayCoef = 0.999f, releaseCoef = 0.999f;
+};
+
 struct SVF
 {
     float ic1 = 0.f, ic2 = 0.f, g = 0.f, k = 1.f, a1 = 0.f, a2 = 0.f, a3 = 0.f;
@@ -188,7 +235,7 @@ public:
 
 private:
     const VoiceParams& params;
-    juce::ADSR ampEnv, filtEnv;
+    ExpADSR ampEnv, filtEnv;
     SVF filter[4];
     float phaseA[7] {}, phaseB[7] {}, subPhase = 0.f;
     float lfoPhase = 0.f, lfoRand = 0.f;

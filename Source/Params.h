@@ -34,6 +34,8 @@ namespace ID
     // Sample section (plays a dropped sample through the same amp env + FX chain)
     inline constexpr auto smpLevel = "smpLevel", smpRoot = "smpRoot", smpTune = "smpTune", smpStart = "smpStart", smpEnd = "smpEnd";
     inline constexpr auto smpLoop = "smpLoop", smpRev = "smpRev", smpChop = "smpChop", smpHalf = "smpHalf";
+    inline constexpr auto smpOnly = "smpOnly";   // keys play the sample alone (synth muted) while a sample is loaded
+    inline constexpr auto smpA = "smpA", smpD = "smpD", smpS = "smpS", smpR = "smpR", smpCut = "smpCut", smpRes = "smpRes";   // sampler's own envelope + low-pass
 }
 
 inline const juce::StringArray waveNames { "Saw", "Square", "Triangle", "Sine", "Pulse", "Glass" };
@@ -148,6 +150,13 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     b (ID::smpRev, "Sample Reverse", false);
     b (ID::smpChop, "Sample Chop Mode", false);
     b (ID::smpHalf, "Sample Halftime", false);
+    b (ID::smpOnly, "Sample Only (mute synth)", true);
+    f (ID::smpA, "Sample Attack", 0.001f, 4.f, 0.003f, 0.35f, "s");
+    f (ID::smpD, "Sample Decay", 0.01f, 8.f, 1.f, 0.35f, "s");
+    f (ID::smpS, "Sample Sustain", 0.f, 1.f, 1.f);
+    f (ID::smpR, "Sample Release", 0.005f, 8.f, 0.25f, 0.35f, "s");
+    f (ID::smpCut, "Sample Cutoff", 20.f, 20000.f, 20000.f, 0.3f, "Hz");
+    f (ID::smpRes, "Sample Resonance", 0.f, 1.f, 0.1f);
 
     return { p.begin(), p.end() };
 }

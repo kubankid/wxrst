@@ -6,6 +6,7 @@
 #include "Chords.h"
 #include "Engine.h"
 #include "Sampler.h"
+#include <array>
 #include "UserPresets.h"
 #include "DrumKit.h"
 
@@ -53,6 +54,8 @@ public:
     std::shared_ptr<const SampleData> getSample() const { const juce::ScopedLock sl (sampleLock); return sample; }
     juce::File extractNotesMidi();                   // pitch-track -> .mid in the chords folder
     juce::File chopSample (juce::File& chopDirOut);  // slice -> WAVs + .mid; enables CHOP mode
+    void auditionNote (int note, bool on);           // UI pads: plays through the main layer like a key press
+    juce::uint64 activeSlices() const { return engines[0].sampler.activeSlices(); }
 
     // ---- Layers (melody / 808 have their own sound) --------------------------
     enum Layer { chordsLayer = 0, melodyLayer = 1, bassLayer = 2, drumsLayer = 3 };
@@ -89,6 +92,8 @@ public:
 
 private:
     Engine engines[3];
+    juce::AbstractFifo uiFifo { 256 };                 // pad clicks from the editor -> audio thread
+    std::array<juce::MidiMessage, 256> uiQueue;
     juce::AudioBuffer<float> layerBuffer;
     juce::MidiBuffer layerMidi[numLayers];
     DrumKit drumKit;
