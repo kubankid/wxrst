@@ -12,6 +12,7 @@ IcewaterProcessor::IcewaterProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "ICEWATER", createParameterLayout())
 {
+    updater.checkNow();
     for (auto* p : getParameters())
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
         {

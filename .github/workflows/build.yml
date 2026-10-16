@@ -41,6 +41,10 @@ jobs:
             Documents\ICEWATER Chords\
           "@ | Set-Content dist/README.txt
 
+      - name: Add installer script
+        shell: pwsh
+        run: Copy-Item installer/install-windows.bat dist/
+
       - uses: actions/upload-artifact@v4
         with:
           name: WXRST-Windows
@@ -66,7 +70,15 @@ jobs:
           cp -R "build/ICEWATER_artefacts/Release/VST3/WXRST.vst3" dist/
           cp -R "build/ICEWATER_artefacts/Release/AU/WXRST.component" dist/
           cp -R "build/ICEWATER_artefacts/Release/Standalone/WXRST.app" dist/
-          cd dist && zip -ry ../WXRST-macOS.zip . && cd ..
+
+      - name: Sign, notarize and zip
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: ci/sign-mac.sh dist WXRST-macOS.zip
 
       - uses: actions/upload-artifact@v4
         with:
@@ -81,6 +93,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match the CMake project version
+        run: |
+          ver=$(sed -nE 's/^project\([A-Z_]+ VERSION ([0-9.]+).*/\1/p' CMakeLists.txt | head -1)
+          echo "CMake version $ver, tag ${GITHUB_REF_NAME}"
+          [ "v$ver" = "${GITHUB_REF_NAME}" ] || { echo "::error::tag ${GITHUB_REF_NAME} != v$ver (bump project VERSION in CMakeLists.txt)"; exit 1; }
       - uses: actions/download-artifact@v4
         with:
           path: artifacts

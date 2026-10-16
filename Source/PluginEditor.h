@@ -199,6 +199,7 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseDown (const juce::MouseEvent& e) override;
 
 private:
     void timerCallback() override;
@@ -224,6 +225,8 @@ private:
     IcewaterProcessor& proc;
     IceLookAndFeel lnf;
     AnimatedBackground background;
+    UpdateBanner updateBanner { proc.updater };   // must come after proc
+    juce::Label versionLbl;
     juce::TextButton animBtn { "~" };
     juce::OwnedArray<Knob> knobs;
     std::map<juce::String, Knob*> knobById;

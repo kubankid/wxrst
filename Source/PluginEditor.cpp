@@ -708,6 +708,16 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
     sChopBtn.setTooltip ("Slice the sample at transients: one slice per pad / key from C5 up, WAVs land in Documents/WXRST/Chops");
     sChopBtn.onClick = [this] { juce::File dir; setSampleFiles ({}, proc.chopSample (dir)); };
 
+    // ---- update banner + version ----
+    content.addAndMakeVisible (updateBanner);
+    content.addAndMakeVisible (versionLbl);
+    versionLbl.setText ("v" DENNY_VERSION, juce::dontSendNotification);
+    versionLbl.setJustificationType (juce::Justification::centredRight);
+    versionLbl.setFont (juce::Font (juce::FontOptions (9.f)));
+    versionLbl.setTooltip ("Click to check for updates");
+    versionLbl.setInterceptsMouseClicks (true, false);
+    versionLbl.addMouseListener (this, false);
+
     // ---- pages / collapsing ----
     samplerTab.setTooltip ("SAMPLER page: big waveform, pads, the sampler's own envelope + filter");
     samplerTab.onClick = [this] { setPage (samplerTab.getToggleState() ? 1 : 0); };
@@ -930,6 +940,8 @@ void IcewaterEditor::syncThemeToPreset (int program)
 void IcewaterEditor::applyTheme (int which)
 {
     IceColours::applyTheme (which);
+    updateBanner.setColours (IceColours::screen, IceColours::ice, IceColours::text);
+    versionLbl.setColour (juce::Label::textColourId, IceColours::dimText);
     lnf.refreshColours();
     for (auto* k : knobs) k->label.setColour (juce::Label::textColourId, IceColours::dimText);
     for (auto* l : { &keyLbl, &scaleLbl, &styleLbl, &barsLbl, &rhythmLbl, &chordSoundLbl })
@@ -1106,6 +1118,11 @@ void IcewaterEditor::setPanelOpen (Panel& panel, juce::TextButton& fold, bool op
     fold.setBounds (panel.getWidth() - 30, 4, 22, 20);
 }
 
+void IcewaterEditor::mouseDown (const juce::MouseEvent& e)
+{
+    if (e.eventComponent == &versionLbl) proc.updater.checkNow (true);
+}
+
 void IcewaterEditor::loadSampleDialog()
 {
     chooser = std::make_unique<juce::FileChooser> ("Load a sample", juce::File::getSpecialLocation (juce::File::userHomeDirectory),
@@ -1145,6 +1162,8 @@ void IcewaterEditor::layoutContent()
     samplerTab.setBounds (700, 22, 80, 28);
     saveBtn.setBounds (788, 22, 52, 28);
     scope.setBounds (850, 12, 114, 52);
+    versionLbl.setBounds (850, 64, 114, 14);
+    updateBanner.setBounds (330, 56, 506, 22);
 
     // Row 1
     oscA.setBounds (16, 82, 300, 215);

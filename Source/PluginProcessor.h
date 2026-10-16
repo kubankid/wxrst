@@ -6,6 +6,7 @@
 #include "Chords.h"
 #include "Engine.h"
 #include "Sampler.h"
+#include "Updater.h"
 #include <array>
 #include "UserPresets.h"
 #include "DrumKit.h"
@@ -84,6 +85,7 @@ public:
     double getHostBpm() const { return hostBpm.load(); }
 
     juce::AudioProcessorValueTreeState apvts;
+    Updater updater { "wxrst", DENNY_VERSION, { "WXRST.vst3", "WXRST.component" }, "WXRST" };   // in-plugin update check
 
     static constexpr int scopeSize = 512;
     std::array<std::atomic<float>, scopeSize> scope {};
