@@ -2,7 +2,7 @@
 
 Lo-fi / PS2-era / Drake-OVO pad, keys, 808 and bass synth with a built-in chord + melody + 808
 MIDI generator. Written entirely with Claude Code for Denny (music producer, FL Studio 2025,
-Apple M5 Max, macOS 27.2). Git repo since 2026-10-11, private remote https://github.com/kubankid/wxrst (renamed from denny-did-it) (JUCE is a git submodule). No tests. Last session: 2026-10-15.
+Apple M5 Max, macOS 27.2). Git repo since 2026-10-11, private remote https://github.com/kubankid/wxrst (renamed from denny-did-it) (JUCE is a git submodule). No tests. Last session: 2026-10-16 (release/download hub; no code changes since 2b9e0d2 / tag v1.1.0).
 
 ## Build & install
 
@@ -84,6 +84,23 @@ Denny's brief (voice messages 2026-10-15): isolate stems from any sample, conver
   folders newest-first, Browse..., Clear; `IcewaterProcessor::loadLayerMidi/loadDrumLoop`, `ChordGen::readMidiFile`),
   loaded files are saved in state (`layerFileN`, `drumLoop`). SAMPLE section got a HALF toggle (`smpHalf`: half speed, octave
   down - tape style, not pitch-preserving). Window is now 980x1030. Env `WXRST_AUTOLOAD=1` / `WXRST_SNAPSHOT=<png>` for tests.
+
+## Releases + download hub (2026-10-16)
+
+- Tags so far: wxrst `v1.1.0`, wxrst-xtract `v1.0.0`, denny-key-finder `v1.0.0` (each repo's CI attaches Windows + macOS zips
+  to a GitHub Release on a `v*` tag). To ship a new version: commit, `git tag vX.Y.Z && git push --tags`, `gh run watch`.
+- `~/Documents/DennyPlugins` (PRIVATE repo https://github.com/kubankid/denny-plugins; Denny said "dont make it public", so
+  no GitHub Pages / public links) = combined downloads. `bundle.sh` pulls the latest release zips from the three repos,
+  unzips into work/win + work/mac, STRIPS the Windows models folder (158 MB upload stalled at ~55 KB/s; XTRACT downloads
+  models itself on first use anyway), zips `Denny-Plugins-Windows.zip` (29 MB) + `Denny-Plugins-macOS.zip` (85 MB) and
+  uploads them with `--clobber` to the release tagged `latest` (`gh release edit latest --draft=false` afterwards or it
+  stays an "untagged" draft). README links: `.../denny-plugins/releases/latest/download/Denny-Plugins-{Windows,macOS}.zip`.
+  Re-run `bundle.sh` after any plugin re-tag. `.github/workflows/bundle.yml` does the same via workflow_dispatch but needs a
+  `BUNDLE_TOKEN` secret (not set up).
+- Private repo = only GitHub collaborators can download. Denny asked about "anyone with the link"; GitHub can't do that
+  for private repos. He dropped it, but if it comes back: upload the two zips from `work/` to Google Drive / Dropbox
+  (`/mcp` -> "claude.ai Google Drive" to authenticate) and share "anyone with the link".
+- Windows builds of XTRACT (ONNX Runtime delay-load) and the HALF/DRUMS WXRST build have NOT been run on Denny's PC yet.
 
 ## Gotchas learned the hard way
 
