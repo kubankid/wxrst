@@ -417,11 +417,13 @@ public:
             v.age += num;
             for (int i = 0; i < num; ++i)
             {
-                if (v.pos >= v.end - 1 || v.pos < v.start)
+                const bool past = v.inc > 0 ? (v.pos >= v.end - 1) : (v.pos < v.start);   // direction-aware (reverse starts AT the end)
+                if (past)
                 {
                     if (p.loop) v.pos = v.inc > 0 ? (double) v.start : (double) (v.end - 1);
                     else { v.active = false; break; }
                 }
+                if (v.pos > v.end - 1) v.pos = v.end - 1;
                 const int i0 = (int) v.pos; const float frac = (float) (v.pos - i0);
                 const int i1 = juce::jmin (v.end - 1, i0 + 1);
                 const float e = v.env.getNextSample() * v.vel * gain;
