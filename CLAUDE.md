@@ -118,6 +118,25 @@ Denny's brief (voice messages 2026-10-15): isolate stems from any sample, conver
   chords/polyphony use XTRACT. Denny's "Mega Dragon Dropable" remark (voice-to-text) was read as "flip it like ..." -> the
   sampler sound controls; ask him if he meant something else.
 
+## Sample editor + hybrid MIDI (2026-10-16, night)
+
+- **XTRACT TO MIDI is now a hybrid tracker** (`Transcriber.cpp`, `NoteOptions::hybrid` default on, mono path unchanged).
+  Reason, measured with `NOTES_BENCH --map <wav> <bpm> [A3,E4,...]`: on Denny's Splice piano stem the loudest held chord
+  tone (A3) scored only 10-27% model confidence against the 30% threshold, so Basic Pitch alone emitted lonely fragments.
+  Hybrid = per-semitone dB spectrogram (FFT 8192 @ 44.1k, hop 512 = model's 86 fps); notes start on model onsets
+  (`modelSupports` = onset > 0.5 AND frames > 0.3 right after) or on spectral rises on real peaks; last while within 15 dB
+  of the settled level (80 ms dip hysteresis); co-attack harmonics rejected unless model-supported or louder than the
+  fundamental; early spectral precursors merged into the model's onset time; semitone-neighbour leakage and duplicate
+  attacks pruned; velocity = level at attack. Synthetic suite: lead 100%, chords 70%, chords+melody F 0.77 (the pure model
+  scored higher on synthetic chords but is useless on real piano - judge on real stems). Denny has NOT listened yet.
+- **WXRST sample editor** (SAMPLER page `bigWave`, class `WaveformView`): playhead (white line, `SamplePlayer::playheadFraction`
+  = newest sounding voice), draggable START/END edges (top-corner grips, parameter gestures), click-drag highlight,
+  CROP / DELETE / UNDO / REDO / CLEAR toolbar under the wave, Delete key + Cmd+Z/Shift+Cmd+Z when the wave has focus.
+  `IcewaterProcessor::editSample(a,b,keepInside)` -> `SampleAnalysis::edited()` (2 ms crossfade on deletes), writes
+  `~/Documents/WXRST/Edits/<name> edit.wav` and points "samplePath" at it, resets CHOP/START/END; 20-deep undo stack
+  (`sampleUndo/sampleRedo`, message thread). Env `WXRST_AUTOEDIT=1` deletes 25-50% after 10 ticks (snapshot test).
+  Not done: dragging / deleting individual slice markers.
+
 ## In-plugin updater + public downloads (2026-10-16, late)
 
 - Denny asked to "push updates to the versions installed on my boys' computers". Answer: `Source/Updater.h` (IDENTICAL copy in

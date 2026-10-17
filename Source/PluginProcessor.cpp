@@ -377,6 +377,65 @@ bool IcewaterProcessor::loadSampleFile (const juce::File& f)
     return true;
 }
 
+// Edited audio lives in Documents/WXRST/Edits so the project can reload it; slices / CHOP / START / END reset.
+void IcewaterProcessor::applyEditedSample (std::shared_ptr<const SampleData> s)
+{
+    auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("WXRST").getChildFile ("Edits");
+    dir.createDirectory();
+    juce::String base = s->name.endsWith (" edit") ? s->name : s->name + " edit";
+    auto f = dir.getChildFile (juce::File::createLegalFileName (base) + ".wav");
+    {
+        f.deleteFile();
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::FileOutputStream> os (f.createOutputStream());
+        if (os != nullptr)
+            if (std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (os.get(), s->sampleRate, (unsigned) s->audio.getNumChannels(), 24, {}, 0) })
+            { os.release(); w->writeFromAudioSampleBuffer (s->audio, 0, s->audio.getNumSamples()); }
+    }
+    auto named = std::make_shared<SampleData> (*s);
+    named->name = base; named->file = f;
+    setSample (named);
+    apvts.state.setProperty ("samplePath", f.getFullPathName(), nullptr);
+    if (auto* p = apvts.getParameter (ID::smpChop)) p->setValueNotifyingHost (0.f);
+    if (auto* p = apvts.getParameter (ID::smpStart)) p->setValueNotifyingHost (0.f);
+    if (auto* p = apvts.getParameter (ID::smpEnd)) p->setValueNotifyingHost (1.f);
+}
+
+bool IcewaterProcessor::editSample (double a, double b, bool keepInside)
+{
+    auto cur = getSample();
+    if (cur == nullptr) return false;
+    auto e = SampleAnalysis::edited (*cur, a, b, keepInside);
+    if (e == nullptr) return false;
+    sampleUndo.push_back (cur);
+    if (sampleUndo.size() > 20) sampleUndo.erase (sampleUndo.begin());
+    sampleRedo.clear();
+    applyEditedSample (e);
+    return true;
+}
+
+bool IcewaterProcessor::undoSample()
+{
+    if (sampleUndo.empty()) return false;
+    if (auto cur = getSample()) sampleRedo.push_back (cur);
+    auto prev = sampleUndo.back(); sampleUndo.pop_back();
+    setSample (prev);
+    apvts.state.setProperty ("samplePath", prev->file.getFullPathName(), nullptr);
+    if (auto* p = apvts.getParameter (ID::smpChop)) p->setValueNotifyingHost (prev->slices.empty() ? 0.f : 1.f);
+    return true;
+}
+
+bool IcewaterProcessor::redoSample()
+{
+    if (sampleRedo.empty()) return false;
+    if (auto cur = getSample()) sampleUndo.push_back (cur);
+    auto next = sampleRedo.back(); sampleRedo.pop_back();
+    setSample (next);
+    apvts.state.setProperty ("samplePath", next->file.getFullPathName(), nullptr);
+    if (auto* p = apvts.getParameter (ID::smpChop)) p->setValueNotifyingHost (next->slices.empty() ? 0.f : 1.f);
+    return true;
+}
+
 juce::File IcewaterProcessor::extractNotesMidi()
 {
     auto s = getSample();

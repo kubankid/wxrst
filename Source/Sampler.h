@@ -33,6 +33,8 @@ namespace SampleAnalysis
         return m;
     }
 
+    inline void rebuildPeaks (SampleData& s);
+
     inline std::shared_ptr<SampleData> load (const juce::File& file)
     {
         juce::AudioFormatManager fm; fm.registerBasicFormats();
@@ -45,14 +47,58 @@ namespace SampleAnalysis
         s->sampleRate = reader->sampleRate;
         s->name = file.getFileNameWithoutExtension();
         s->file = file;
-        auto m = monoMix (*s);
-        s->peaks.assign (512, 0.f);
+        rebuildPeaks (*s);
+        return s;
+    }
+
+    inline void rebuildPeaks (SampleData& s)
+    {
+        auto m = monoMix (s);
+        const int len = s.length();
+        s.peaks.assign (512, 0.f);
         for (int i = 0; i < len; ++i)
         {
-            auto& pk = s->peaks[(size_t) juce::jmin (511, (int) ((juce::int64) i * 512 / len))];
+            auto& pk = s.peaks[(size_t) juce::jmin (511, (int) ((juce::int64) i * 512 / juce::jmax (1, len)))];
             pk = juce::jmax (pk, std::abs (m[(size_t) i]));
         }
-        return s;
+    }
+
+    // Editing: keep [a,b) (crop) or remove it (delete). Fractions of the length. Slices are dropped (they no longer line up).
+    inline std::shared_ptr<SampleData> edited (const SampleData& src, double a, double b, bool keepInside)
+    {
+        const int N = src.length();
+        int ia = juce::jlimit (0, N, (int) std::round (juce::jmin (a, b) * N)), ib = juce::jlimit (0, N, (int) std::round (juce::jmax (a, b) * N));
+        if (ib - ia < 16) return nullptr;
+        auto out = std::make_shared<SampleData>();
+        out->sampleRate = src.sampleRate; out->name = src.name; out->file = src.file;
+        const int ch = src.audio.getNumChannels();
+        if (keepInside)
+        {
+            out->audio.setSize (ch, ib - ia);
+            for (int c = 0; c < ch; ++c) out->audio.copyFrom (c, 0, src.audio, c, ia, ib - ia);
+        }
+        else
+        {
+            const int keep = N - (ib - ia);
+            if (keep < 16) return nullptr;
+            out->audio.setSize (ch, keep);
+            for (int c = 0; c < ch; ++c)
+            {
+                if (ia > 0) out->audio.copyFrom (c, 0, src.audio, c, 0, ia);
+                if (N - ib > 0) out->audio.copyFrom (c, ia, src.audio, c, ib, N - ib);
+            }
+            // 2 ms crossfade at the join so the cut does not click
+            const int xf = juce::jmin (ia, N - ib, (int) (src.sampleRate * 0.002));
+            for (int c = 0; c < ch && xf > 0; ++c)
+                for (int i = 0; i < xf; ++i)
+                {
+                    const float t = (float) i / (float) xf;
+                    const float before = src.audio.getSample (c, ia - xf + i), after = src.audio.getSample (c, ib + i);
+                    out->audio.setSample (c, ia - xf + i, before * (1.f - t) + after * t);
+                }
+        }
+        rebuildPeaks (*out);
+        return out;
     }
 
     // ---- audio -> MIDI (monophonic pitch tracking) -------------------------------------
@@ -358,6 +404,11 @@ public:
         auto* R = out.getNumChannels() > 1 ? out.getWritePointer (1, startSample) : nullptr;
         const float gain = p.level * 0.9f;
         const bool filt = p.cutoff < 19000.f;
+        {
+            const Voice* newest = nullptr;
+            for (auto& v : voices) if (v.active && (newest == nullptr || v.age < newest->age)) newest = &v;
+            playhead.store (newest != nullptr ? (float) (newest->pos / (double) juce::jmax (1, data->length())) : -1.f);
+        }
         for (auto& v : voices)
         {
             if (! v.active) continue;
@@ -386,6 +437,7 @@ public:
 
     bool anyActive() const { for (auto& v : voices) if (v.active) return true; return false; }
     bool hasSample() const { return data != nullptr; }
+    float playheadFraction() const { return playhead.load(); }   // position of the newest sounding voice, -1 when silent
 
     // Chops sit on the keys from C5 (MIDI 60, FL's middle C) upward and wrap, so every key plays something.
     static constexpr int chopBaseNote = 60;
@@ -404,4 +456,5 @@ private:
     Voice voices[8];
     std::shared_ptr<const SampleData> data;
     double sr = 44100.0;
+    std::atomic<float> playhead { -1.f };
 };

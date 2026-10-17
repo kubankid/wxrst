@@ -125,11 +125,23 @@ private:
 };
 
 // Waveform + drop zone for the SAMPLE section
+// Interactive: drag on the wave to highlight a region (CROP / DELETE act on it), drag the START / END edges,
+// playhead follows whatever is sounding. Delete key = delete selection, Cmd/Ctrl+Z = undo, shift = redo.
 class WaveformView : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer
 {
 public:
-    WaveformView (IcewaterProcessor& p) : proc (p) { startTimerHz (4); }
+    WaveformView (IcewaterProcessor& p) : proc (p) { startTimerHz (30); setWantsKeyboardFocus (true); }
     void paint (juce::Graphics& g) override;
+    void mouseDown (const juce::MouseEvent& e) override;
+    void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseUp (const juce::MouseEvent& e) override;
+    void mouseMove (const juce::MouseEvent& e) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override { clearSelection(); }
+    bool keyPressed (const juce::KeyPress& k) override;
+    bool hasSelection() const { return selA >= 0.0 && selB > selA + 0.0005; }
+    void getSelection (double& a, double& b) const { a = juce::jmin (selA, selB); b = juce::jmax (selA, selB); }
+    void clearSelection() { selA = selB = -1.0; repaint(); }
+    std::function<void()> onDropped, onEdit;   // onEdit = after a keyboard delete / undo so the page refreshes
     bool isInterestedInFileDrag (const juce::StringArray& files) override
     {
         for (auto& f : files) if (juce::File (f).hasFileExtension ("wav;aif;aiff;mp3;flac;ogg;m4a")) return true;
@@ -143,12 +155,17 @@ public:
         for (auto& f : files) if (proc.loadSampleFile (juce::File (f))) { if (onDropped) onDropped(); break; }
         repaint();
     }
-    std::function<void()> onDropped;
 private:
-    void timerCallback() override { auto s = proc.getSample(); if (s.get() != lastShown) { lastShown = s.get(); repaint(); } }
+    void timerCallback() override;
+    double xToFrac (float x) const;
+    float fracToX (double f) const;
+    int hitHandle (juce::Point<int> p) const;   // 0 none, 2 start, 3 end
     IcewaterProcessor& proc;
     const SampleData* lastShown = nullptr;
     bool hover = false;
+    double selA = -1.0, selB = -1.0, dragAnchor = 0.0;
+    int dragMode = 0;                           // 0 none, 1 selecting, 2 start edge, 3 end edge
+    float lastPlayhead = -1.f, lastStart = -1.f, lastEnd = -1.f;
 };
 
 // Drag a generated file (MIDI clip) out into FL
@@ -276,7 +293,9 @@ private:
     FileDragPad sNotesPad { "DRAG NOTES >>" }, sChopsPad { "DRAG CHOPS >>" };
     std::vector<Knob*> samplerKnobs;
     SlicePads pads { proc };
-    juce::Label padHint;
+    juce::Label padHint, selInfo;
+    juce::TextButton cropBtn { "CROP" }, deleteBtn { "DELETE" }, undoBtn { "UNDO" }, redoBtn { "REDO" }, clearSelBtn { "CLEAR" };
+    void refreshEditButtons();
 
     // Chord generator
     void generateChords();

@@ -420,14 +420,14 @@ void WaveformView::paint (juce::Graphics& g)
     // slices
     if (! s->slices.empty())
     {
-        const bool big = getWidth() > 600;
+        const bool wide = getWidth() > 600;
         int idx = 0;
         for (auto& sl : s->slices)
         {
             const float x = area.getX() + area.getWidth() * (float) sl.first / (float) juce::jmax (1, s->length());
             g.setColour (iceGlow.withAlpha (0.35f));
             g.drawVerticalLine ((int) x, area.getY(), area.getBottom());
-            if (big && idx < 64)
+            if (wide && idx < 64)
             {
                 g.setColour (iceGlow.withAlpha (0.8f));
                 g.setFont (juce::Font (juce::FontOptions (9.f, juce::Font::bold)));
@@ -450,11 +450,123 @@ void WaveformView::paint (juce::Graphics& g)
     g.setColour (ice.withAlpha (0.85f));
     g.fillPath (pth);
 
+    // START / END edges (draggable)
+    const bool big = getWidth() > 600;
+    for (int which = 0; which < 2; ++which)
+    {
+        const float x = fracToX (which == 0 ? a : b);
+        g.setColour (iceGlow.withAlpha (0.9f));
+        g.drawVerticalLine ((int) x, area.getY(), area.getBottom());
+        if (big)
+        {
+            juce::Path grip;
+            grip.addTriangle (x, area.getY(), x + (which == 0 ? 9.f : -9.f), area.getY(), x, area.getY() + 9.f);
+            g.fillPath (grip);
+        }
+    }
+    // highlighted region
+    if (hasSelection())
+    {
+        const float x0 = fracToX (juce::jmin (selA, selB)), x1 = fracToX (juce::jmax (selA, selB));
+        g.setColour (iceGlow.withAlpha (0.22f));
+        g.fillRect (x0, area.getY(), x1 - x0, area.getHeight());
+        g.setColour (iceGlow);
+        g.drawVerticalLine ((int) x0, area.getY(), area.getBottom());
+        g.drawVerticalLine ((int) x1, area.getY(), area.getBottom());
+    }
+    // playhead
+    if (const float ph = proc.samplePlayhead(); ph >= 0.f)
+    {
+        const float x = fracToX (ph);
+        g.setColour (juce::Colours::white.withAlpha (0.85f));
+        g.fillRect (x - 1.f, area.getY(), 2.f, area.getHeight());
+    }
+
     g.setColour (text);
     g.setFont (juce::Font (juce::FontOptions (11.f, juce::Font::bold)));
     juce::String info = s->name + "   " + juce::String (s->length() / s->sampleRate, 1) + "s";
     if (! s->slices.empty()) info += "   " + juce::String ((int) s->slices.size()) + " chops (C5 up)";
     g.drawText (info, getLocalBounds().reduced (8, 4), juce::Justification::topLeft);
+}
+
+double WaveformView::xToFrac (float x) const { return juce::jlimit (0.0, 1.0, (double) (x - 4.f) / (double) juce::jmax (1, getWidth() - 8)); }
+float WaveformView::fracToX (double f) const { return 4.f + (float) f * (float) (getWidth() - 8); }
+
+int WaveformView::hitHandle (juce::Point<int> pt) const
+{
+    if (proc.getSample() == nullptr) return 0;
+    const float a = proc.apvts.getRawParameterValue (ID::smpStart)->load(), b = proc.apvts.getRawParameterValue (ID::smpEnd)->load();
+    const float xa = fracToX (juce::jmin (a, b)), xb = fracToX (juce::jmax (a, b));
+    if (std::abs ((float) pt.x - xa) <= 6.f) return 2;
+    if (std::abs ((float) pt.x - xb) <= 6.f) return 3;
+    return 0;
+}
+
+void WaveformView::mouseMove (const juce::MouseEvent& e)
+{
+    const int h = hitHandle (e.getPosition());
+    setMouseCursor (h != 0 ? juce::MouseCursor::LeftRightResizeCursor : (proc.getSample() ? juce::MouseCursor::IBeamCursor : juce::MouseCursor::NormalCursor));
+}
+
+void WaveformView::mouseDown (const juce::MouseEvent& e)
+{
+    grabKeyboardFocus();
+    if (proc.getSample() == nullptr) return;
+    dragMode = hitHandle (e.getPosition());
+    if (dragMode == 0) { dragMode = 1; dragAnchor = xToFrac ((float) e.x); selA = selB = -1.0; }
+    else if (auto* p = proc.apvts.getParameter (dragMode == 2 ? ID::smpStart : ID::smpEnd)) p->beginChangeGesture();
+    repaint();
+}
+
+void WaveformView::mouseDrag (const juce::MouseEvent& e)
+{
+    if (dragMode == 0) return;
+    const double f = xToFrac ((float) e.x);
+    if (dragMode == 1)
+    {
+        if (e.getDistanceFromDragStart() >= 3) { selA = dragAnchor; selB = f; }
+    }
+    else if (auto* p = proc.apvts.getParameter (dragMode == 2 ? ID::smpStart : ID::smpEnd))
+        p->setValueNotifyingHost ((float) f);
+    repaint();
+}
+
+void WaveformView::mouseUp (const juce::MouseEvent& e)
+{
+    if (dragMode >= 2) { if (auto* p = proc.apvts.getParameter (dragMode == 2 ? ID::smpStart : ID::smpEnd)) p->endChangeGesture(); }
+    else if (dragMode == 1 && e.getDistanceFromDragStart() < 3) selA = selB = -1.0;   // a plain click clears the highlight
+    dragMode = 0;
+    repaint();
+}
+
+bool WaveformView::keyPressed (const juce::KeyPress& k)
+{
+    const bool cmd = k.getModifiers().isCommandDown() || k.getModifiers().isCtrlDown();
+    if ((k.isKeyCode (juce::KeyPress::deleteKey) || k.isKeyCode (juce::KeyPress::backspaceKey)) && hasSelection())
+    {
+        double a, b; getSelection (a, b);
+        if (proc.editSample (a, b, false)) { clearSelection(); if (onEdit) onEdit(); }
+        return true;
+    }
+    if (cmd && k.isKeyCode ('Z'))
+    {
+        const bool ok = k.getModifiers().isShiftDown() ? proc.redoSample() : proc.undoSample();
+        if (ok) { clearSelection(); if (onEdit) onEdit(); }
+        return true;
+    }
+    return false;
+}
+
+void WaveformView::timerCallback()
+{
+    auto s = proc.getSample();
+    const float ph = proc.samplePlayhead();
+    const float a = proc.apvts.getRawParameterValue (ID::smpStart)->load(), b = proc.apvts.getRawParameterValue (ID::smpEnd)->load();
+    if (s.get() != lastShown || ph != lastPlayhead || a != lastStart || b != lastEnd)
+    {
+        lastShown = s.get(); lastPlayhead = ph; lastStart = a; lastEnd = b;
+        repaint();
+    }
 }
 
 void FileDragPad::paint (juce::Graphics& g)
@@ -684,6 +796,23 @@ IcewaterEditor::IcewaterEditor (IcewaterProcessor& p)
     samplerP.addAndMakeVisible (sNotesPad); samplerP.addAndMakeVisible (sChopsPad);
     samplerP.addAndMakeVisible (pads);
     samplerP.addAndMakeVisible (padHint);
+    for (auto* b : { &cropBtn, &deleteBtn, &undoBtn, &redoBtn, &clearSelBtn }) samplerP.addAndMakeVisible (b);
+    samplerP.addAndMakeVisible (selInfo);
+    selInfo.setFont (juce::Font (juce::FontOptions (10.f)));
+    selInfo.setColour (juce::Label::textColourId, dimText);
+    cropBtn.setTooltip ("Keep only the highlighted part");
+    deleteBtn.setTooltip ("Remove the highlighted part (Delete key does the same)");
+    undoBtn.setTooltip ("Undo the last crop / delete (Cmd+Z)");
+    redoBtn.setTooltip ("Redo (Shift+Cmd+Z)");
+    clearSelBtn.setTooltip ("Clear the highlight (or double-click the wave)");
+    auto afterEdit = [this] { bigWave.clearSelection(); setSampleFiles ({}, {}); refreshEditButtons(); };
+    cropBtn.onClick = [this, afterEdit] { double a, b; bigWave.getSelection (a, b); if (bigWave.hasSelection() && proc.editSample (a, b, true)) afterEdit(); };
+    deleteBtn.onClick = [this, afterEdit] { double a, b; bigWave.getSelection (a, b); if (bigWave.hasSelection() && proc.editSample (a, b, false)) afterEdit(); };
+    undoBtn.onClick = [this, afterEdit] { if (proc.undoSample()) afterEdit(); };
+    redoBtn.onClick = [this, afterEdit] { if (proc.redoSample()) afterEdit(); };
+    clearSelBtn.onClick = [this] { bigWave.clearSelection(); refreshEditButtons(); };
+    bigWave.onEdit = afterEdit;
+    bigWave.onDropped = [this] { refreshEditButtons(); };
     padHint.setFont (juce::Font (juce::FontOptions (10.f)));
     padHint.setColour (juce::Label::textColourId, dimText);
     padHint.setText ("PADS / KEYS: pad 1 = C5 (FL's middle C), going up. Before CHOP IT the pads play the sample pitched. Click a pad to hear it; DRAG CHOPS drops the slice order into FL as MIDI.", juce::dontSendNotification);
@@ -1035,8 +1164,14 @@ void IcewaterEditor::timerCallback()
         juce::PNGImageFormat().writeImageToStream (img, os);
     }
 
+    if (juce::SystemStats::getEnvironmentVariable ("WXRST_AUTOEDIT", "") == "1" && snapshotTicks == 10)
+    {   // test hook: delete the middle quarter, then re-highlight a bit for the screenshot
+        if (proc.editSample (0.25, 0.5, false)) { bigWave.clearSelection(); proc.auditionNote (62, true); }
+    }
     if (juce::SystemStats::getEnvironmentVariable ("WXRST_AUTOCHOP", "") == "1" && snapshotTicks == 10)
         if (auto smp = proc.getSample(); smp != nullptr && smp->slices.empty()) sChopBtn.onClick();
+
+    if (page == 1) refreshEditButtons();
 
     const int prog = proc.getCurrentProgram();
     const int up = proc.currentUserPreset.load();
@@ -1121,6 +1256,25 @@ void IcewaterEditor::setPanelOpen (Panel& panel, juce::TextButton& fold, bool op
 void IcewaterEditor::mouseDown (const juce::MouseEvent& e)
 {
     if (e.eventComponent == &versionLbl) proc.updater.checkNow (true);
+}
+
+void IcewaterEditor::refreshEditButtons()
+{
+    const bool sel = bigWave.hasSelection();
+    cropBtn.setEnabled (sel); deleteBtn.setEnabled (sel); clearSelBtn.setEnabled (sel);
+    undoBtn.setEnabled (proc.canUndoSample()); redoBtn.setEnabled (proc.canRedoSample());
+    juce::String t;
+    if (auto s = proc.getSample())
+    {
+        if (sel)
+        {
+            double a, b; bigWave.getSelection (a, b);
+            const double secs = s->length() / s->sampleRate;
+            t = "HIGHLIGHT " + juce::String (a * secs, 2) + "s - " + juce::String (b * secs, 2) + "s  (" + juce::String ((b - a) * secs, 2) + "s)   CROP keeps it, DELETE removes it";
+        }
+        else t = "Drag on the wave to highlight. Drag the top corners to move START / END. Double-click clears.";
+    }
+    if (t != selInfo.getText()) selInfo.setText (t, juce::dontSendNotification);
 }
 
 void IcewaterEditor::loadSampleDialog()
@@ -1263,8 +1417,16 @@ void IcewaterEditor::layoutContent()
         y = 82 + 688 + 8;
         samplerP.setBounds (16, 82, 948, 688);
         auto r = samplerP.getLocalBounds().reduced (10).withTrimmedTop (24);
-        bigWave.setBounds (r.removeFromTop (230));
-        r.removeFromTop (8);
+        bigWave.setBounds (r.removeFromTop (206));
+        r.removeFromTop (4);
+        auto tools = r.removeFromTop (22);
+        selInfo.setBounds (tools.removeFromLeft (420));
+        clearSelBtn.setBounds (tools.removeFromRight (60)); tools.removeFromRight (10);
+        redoBtn.setBounds (tools.removeFromRight (60)); tools.removeFromRight (4);
+        undoBtn.setBounds (tools.removeFromRight (60)); tools.removeFromRight (10);
+        deleteBtn.setBounds (tools.removeFromRight (70)); tools.removeFromRight (4);
+        cropBtn.setBounds (tools.removeFromRight (70));
+        r.removeFromTop (6);
         auto row = r.removeFromTop (26);
         sLoadBtn.setBounds (row.removeFromLeft (80)); row.removeFromLeft (6);
         sMidiBtn.setBounds (row.removeFromLeft (80)); row.removeFromLeft (6);

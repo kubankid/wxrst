@@ -56,6 +56,13 @@ public:
     juce::File extractNotesMidi();                   // pitch-track -> .mid in the chords folder
     juce::File chopSample (juce::File& chopDirOut);  // slice -> WAVs + .mid; enables CHOP mode
     void auditionNote (int note, bool on);           // UI pads: plays through the main layer like a key press
+    float samplePlayhead() const { return engines[0].sampler.playheadFraction(); }
+    // sample editing (message thread): crop to / delete a range given as fractions; undo / redo stacks
+    bool editSample (double a, double b, bool keepInside);
+    bool undoSample();
+    bool redoSample();
+    bool canUndoSample() const { return ! sampleUndo.empty(); }
+    bool canRedoSample() const { return ! sampleRedo.empty(); }
     juce::uint64 activeSlices() const { return engines[0].sampler.activeSlices(); }
 
     // ---- Layers (melody / 808 have their own sound) --------------------------
@@ -111,6 +118,8 @@ private:
 
     juce::CriticalSection sampleLock;
     std::shared_ptr<const SampleData> sample;
+    std::vector<std::shared_ptr<const SampleData>> sampleUndo, sampleRedo;
+    void applyEditedSample (std::shared_ptr<const SampleData> s);
     void setSample (std::shared_ptr<const SampleData> s);
 
     juce::CriticalSection progLock;
