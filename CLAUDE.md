@@ -129,6 +129,14 @@ Denny's brief (voice messages 2026-10-15): isolate stems from any sample, conver
   fundamental; early spectral precursors merged into the model's onset time; semitone-neighbour leakage and duplicate
   attacks pruned; velocity = level at attack. Synthetic suite: lead 100%, chords 70%, chords+melody F 0.77 (the pure model
   scored higher on synthetic chords but is useless on real piano - judge on real stems). Denny has NOT listened yet.
+- **XTRACT voicings** (same night): `Transcriber::musicalCleanup(notes, bpm, Voicing{All,Lead,Chords})` runs after the hybrid
+  tracker for non-mono rows: key detection, blip + weak out-of-key removal, LEAD = top line per 1/16 (highest note within
+  60% of the loudest sounding), CHORDS = one block chord per chord change (2+ new pitch classes, re-strikes within 2 beats
+  = same chord, min 1 beat, max 6 voices, held to the next change), ALL = chords + lead merged. UI: "NOTES:" combo
+  (`midiVoicing` 0..3, 3 = model-only MONO) replaced the MONO button. Bench: `NOTES_BENCH <wav> <bpm> --lead|--chords|--all
+  --snap=4 [out.mid]`. On the Splice piano stem CHORDS gives Am7 (7.5 beats) | Bm7 | ... instead of 80 fragments.
+  Test MIDIs written next to the stems: piano-CHORDS.mid, piano-ALL.mid, other-LEAD.mid. Denny has not listened.
+- **REV fix** (Sampler.h render): reverse voices died on their first sample because the end check ignored direction.
 - **WXRST sample editor** (SAMPLER page `bigWave`, class `WaveformView`): playhead (white line, `SamplePlayer::playheadFraction`
   = newest sounding voice), draggable START/END edges (top-corner grips, parameter gestures), click-drag highlight,
   CROP / DELETE / UNDO / REDO / CLEAR toolbar under the wave, Delete key + Cmd+Z/Shift+Cmd+Z when the wave has focus.
