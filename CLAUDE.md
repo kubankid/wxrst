@@ -2,7 +2,24 @@
 
 Lo-fi / PS2-era / Drake-OVO pad, keys, 808 and bass synth with a built-in chord + melody + 808
 MIDI generator. Written entirely with Claude Code for Denny (music producer, FL Studio 2025,
-Apple M5 Max, macOS 27.2). Git repo since 2026-10-11, private remote https://github.com/kubankid/wxrst (renamed from denny-did-it) (JUCE is a git submodule). No tests. Last session: 2026-10-16 evening (SAMPLER page, resizable window, collapsible rows, exp envelopes, XTRACT MIDI cleanup) - NOT tagged/released yet; Denny has not tested any of it.
+Apple M5 Max, macOS 27.2). Git repo since 2026-10-11, remote https://github.com/kubankid/wxrst (renamed from denny-did-it; made PUBLIC 2026-10-17 at Denny's request so GitHub Actions builds are free again - see "Status 2026-10-20"). No tests. Last session: 2026-10-16/17 (SAMPLER page, resizable window, collapsible rows, exp envelopes, sample editor, XTRACT hybrid MIDI + voicings, in-plugin updater) - released as WXRST v1.3.0 / XTRACT v1.2.0; Denny has not tested any of it in FL yet.
+
+## Status 2026-10-20 (saved at Denny's request: "save status")
+
+- **Shipped + live for friends**: WXRST 1.3.0, WXRST XTRACT 1.2.0, Denny Key Finder 1.0.1, Mac + Windows, on the public repo
+  kubankid/denny-plugins-releases. Working links (note the order `releases/download/latest/...`; `releases/latest/download/`
+  404s because it resolves to the newest per-plugin release):
+  https://github.com/kubankid/denny-plugins-releases/releases/download/latest/Denny-Plugins-Windows.zip (29 MB) and
+  .../Denny-Plugins-macOS.zip. version.json says mac+win 1.3.0 / 1.2.0 / 1.0.1, so installed copies with the updater see them.
+- **Why the source repos went public**: on 2026-10-17 GitHub Actions refused to start jobs on the private repos (billing /
+  spending-limit message, free private minutes exhausted, macOS counts 10x). Mac builds were done locally, then Denny said
+  "finnnee make it public": `gh repo edit --visibility public` on kubankid/wxrst and kubankid/wxrst-xtract, re-ran the
+  v1.3.0 / v1.2.0 tag runs, both green with Windows zips. denny-key-finder and denny-plugins (scripts) stay PRIVATE.
+  The auto-mode permission classifier may deny gh commands on the public repos ("Create Public Surface"); issue them one at a time.
+- **Not done**: Apple signing secrets still not set (all published Mac zips unsigned, friends right-click > Open once);
+  Windows builds never run on a real PC; Denny has not listened to the hybrid MIDI / voicings or tried the SAMPLER page,
+  sample editor, REV fix, 808 envelopes. Next MIDI ideas offered, not approved: chroma-based chord detection, piano-specific
+  model (ByteDance / Onsets&Frames via ONNX), in-plugin note editor, draggable/deletable slice markers.
 
 ## Build & install
 
@@ -150,7 +167,7 @@ Denny's brief (voice messages 2026-10-15): isolate stems from any sample, conver
 - Denny asked to "push updates to the versions installed on my boys' computers". Answer: `Source/Updater.h` (IDENTICAL copy in
   VST1, XTRACT and KeyFinder - edit one, copy to the others) + `UpdateBanner`. On construction the processor calls
   `updater.checkNow()`: at most every 6 h it fetches `https://raw.githubusercontent.com/kubankid/denny-plugins-releases/main/version.json`
-  (PUBLIC repo, binaries only - Denny OK'd this; source repos stay private), compares `DENNY_VERSION` (CMake
+  (PUBLIC repo, binaries only; since 2026-10-17 the wxrst + wxrst-xtract source repos are public too, Key Finder private), compares `DENNY_VERSION` (CMake
   `project(... VERSION)` passed as a compile definition) with the manifest, and the editor shows a banner strip
   (WXRST: header at (330,56,506,22) next to the subtitle; XTRACT: where the status label sits; Key Finder: under the header).
   Click = download zip to ~/Downloads, unzip, macOS: copy bundles into ~/Library/Audio/Plug-Ins/{VST3,Components} and say
@@ -168,7 +185,7 @@ Denny's brief (voice messages 2026-10-15): isolate stems from any sample, conver
   Denny has a paid Apple Developer account but the secrets were NOT set yet as of 2026-10-16 - the v1.2.0 / v1.1.0 / v1.0.1
   builds are unsigned; after he adds the secrets, re-cut tags (x.y.z+1) so the published zips are notarized. No Windows
   Authenticode cert (SmartScreen only hits the standalone .exe; VST3 in FL is fine).
-- Versions now: WXRST 1.2.0, XTRACT 1.1.0, Key Finder 1.0.1 (tags pushed 2026-10-16). `~/Documents/DennyPlugins/publish.sh`
+- Versions now: WXRST 1.3.0, XTRACT 1.2.0, Key Finder 1.0.1 (tags pushed 2026-10-17; earlier 1.2.0 / 1.1.0 on 2026-10-16). `~/Documents/DennyPlugins/publish.sh`
   (replaces bundle.sh) pulls each repo's latest release, uploads per-plugin zips (XTRACT models stripped) to
   `denny-plugins-releases` release `<key>-v<ver>`, rebuilds the combined bundles under `latest`, and PUTs `version.json` via
   `gh api`. Run it after every re-tag. Friends' existing installs (pre-updater) must install once by hand.
